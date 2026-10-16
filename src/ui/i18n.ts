@@ -1,14 +1,20 @@
+import { drawingDe, drawingEn } from './i18n-drawing';
+import { assemblyDe, assemblyEn } from './i18n-assembly';
+import { jointEditDe, jointEditEn } from './i18n-joint-edit';
 import type { Msg } from '../core/model';
 import { genDe, genEn } from './i18n-gen';
 import { staticsDe, staticsEn } from './i18n-statics';
 import { cadDe, cadEn } from './i18n-cad';
 import { safetyDe, safetyEn } from './i18n-safety';
+import { precisionDe, precisionEn } from './i18n-precision';
 import { contextDe, contextEn } from './i18n-context';
 import { getState, useApp, type Lang } from './store';
 
 type Dict = Record<string, string>;
 
 const de: Dict = {
+  'help.preliminary': 'Statische Berechnungen dienen der Vorbemessung und ersetzen keinen prüffähigen Standsicherheitsnachweis.',
+  'help.exitTool': 'Auswahl / Werkzeug beenden', 'help.ctrl': 'Strg', 'help.delete': 'Entf',
   'app.name': 'OpenWoodCAD',
   'app.tagline': 'Konstruktion für Holz – vom Möbel bis zum Dachstuhl',
   // workspaces
@@ -69,6 +75,9 @@ const de: Dict = {
 };
 
 const en: Dict = {
+  'help.preliminary': 'Structural calculations are preliminary sizing checks and do not replace a verifiable structural design.',
+  'help.exitTool': 'Clear selection / finish tool', 'help.ctrl': 'Ctrl', 'help.delete': 'Del',
+  'app.name': 'OpenWoodCAD',
   'app.tagline': 'Woodworking design – from furniture to roof structures',
   'ws.model': 'Model', 'ws.drawings': 'Drawings', 'ws.lists': 'Lists', 'ws.nesting': 'Cutting', 'ws.shopping': 'Shopping & costing', 'ws.statics': 'Structure', 'ws.project': 'Project',
   'menu.file': 'File', 'menu.new': 'New', 'menu.open': 'Open file …', 'menu.save': 'Save as file (.owc)', 'menu.projects': 'Projects & restore …', 'menu.export': 'Export', 'menu.edit': 'Edit', 'menu.insert': 'Insert', 'menu.view': 'View', 'menu.help': 'Help',
@@ -119,9 +128,18 @@ Object.assign(en, staticsEn);
 Object.assign(de, cadDe);
 Object.assign(en, cadEn);
 Object.assign(de, safetyDe);Object.assign(en,safetyEn);
+Object.assign(de,drawingDe);Object.assign(en,drawingEn);
+Object.assign(de,jointEditDe);Object.assign(en,jointEditEn);
+Object.assign(de,precisionDe);Object.assign(en,precisionEn);
 Object.assign(de,contextDe);Object.assign(en,contextEn);
 
 const dicts: Record<Lang, Dict> = { de, en };
+Object.assign(de,assemblyDe);Object.assign(en,assemblyEn);
+
+/** Independent dictionary snapshot for coverage checks, without German fallback. */
+export function translationEntries(lang: Lang): Readonly<Dict> {
+  return { ...dicts[lang] };
+}
 
 /** Register additional translations (used by modules that add features). */
 export function addTranslations(lang: Lang, entries: Dict): void {

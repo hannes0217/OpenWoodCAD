@@ -1,4 +1,4 @@
-import type { Frame } from '../core/math';
+import type { Frame, Plane } from '../core/math';
 import type { OutlinePt, Processing } from '../core/model';
 import type { MeshData, Projection } from './kernel';
 
@@ -16,9 +16,9 @@ export interface PlacedSpec extends SolidSpec {
   frame: Frame;
 }
 
-export type ViewSpec =
+export type ViewSpec = (
   | { kind: 'plane'; plane: 'front' | 'back' | 'top' | 'bottom' | 'left' | 'right' }
-  | { kind: 'camera'; position: [number, number, number]; direction: [number, number, number]; xAxis: [number, number, number] };
+  | { kind: 'camera'; position: [number, number, number]; direction: [number, number, number]; xAxis: [number, number, number] }) & { clipPlanes?: Plane[] };
 
 export type WorkerRequest =
   | { id: number; type: 'init' }

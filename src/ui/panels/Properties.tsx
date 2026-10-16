@@ -1,10 +1,13 @@
 import { findMaterial, materialName } from '../../core/catalog';
 import { GENERATORS } from '../../core/generators';
-import { JOINT_PARAMS } from '../../core/joints';
 import { frameFromEuler, frameToEuler, type Vec3 } from '../../core/math';
 import type { ParamValue } from '../../core/model';
 import { explodeGenerator } from '../actions';
 import { MaterialSelect, NumberInput, Row, Section, TextInput } from '../components/Field';
+import { FittingLibrary } from '../components/FittingLibrary';
+import { AssemblyEditor, MembershipEditor } from '../components/AssemblyEditor';
+import { OperationEditor } from '../components/OperationEditor';
+import { objectWorldFrame, setObjectWorldFrame } from '../../core/assemblies';
 import { ParamForm } from '../components/ParamForm';
 import { TransformPanel } from './TransformPanel';
 import { fmt, has, useT } from '../i18n';
@@ -21,6 +24,8 @@ export function Properties() {
 
   // ----- generator (directly selected or via one of its parts)
   const first = selection[0];
+  if(selection.length===1&&first.startsWith('group:'))return <div className="props"><AssemblyEditor id={first.slice(6)}/><TransformPanel/></div>;
+  if(selection.length===1&&first.startsWith('proc:'))return <div className="props"><OperationEditor reference={first}/></div>;
   const elem = ev.elements.find((e) => e.id === first);
   const genId = first.startsWith('gen:') ? first.slice(4) : selection.length === 1 ? elem?.generator : undefined;
   const gen = genId ? doc.generators.find((g) => g.id === genId) : undefined;
@@ -47,11 +52,11 @@ export function Properties() {
   });
   const setGenPos = (i: number, v: number) => updateDoc((d) => {
     const g = d.generators.find((x) => x.id === genId);
-    if (g) { const o = [...g.frame.o] as Vec3; o[i] = v; g.frame = { ...g.frame, o }; }
+    if (g) { const f=objectWorldFrame(d,`gen:${g.id}`),o = [...f.o] as Vec3; o[i] = v; setObjectWorldFrame(d,`gen:${g.id}`,{...f,o}); }
   });
   const setGenRot = (deg: number) => updateDoc((d) => {
     const g = d.generators.find((x) => x.id === genId);
-    if (g) g.frame = frameFromEuler(g.frame.o, [deg, 0, 0]);
+    if (g) setObjectWorldFrame(d,`gen:${g.id}`,frameFromEuler(objectWorldFrame(d,`gen:${g.id}`).o, [deg, 0, 0]));
   });
 
   return (
@@ -67,13 +72,15 @@ export function Properties() {
             </div>
           )}
           <ParamForm defs={GENERATORS[gen.type]?.params ?? []} values={gen.params} catalog={ev.catalog} onChange={setGenParam} />
+          <div className="pad"><MembershipEditor objectKey={`gen:${gen.id}`}/></div>
           <Section title={t('props.placement')} open={false}>
             {(['X', 'Y', 'Z'] as const).map((ax, i) => (
-              <Row key={ax} label={ax}><NumberInput value={gen.frame.o[i]} step={10} unit="mm" onCommit={(v) => setGenPos(i, v)} /></Row>
+              <Row key={ax} label={ax}><NumberInput value={objectWorldFrame(doc,`gen:${gen.id}`).o[i]} step={10} unit="mm" onCommit={(v) => setGenPos(i, v)} /></Row>
             ))}
-            <Row label={t('props.rotation')}><NumberInput value={frameToEuler(gen.frame)[0]} step={15} unit="°" onCommit={setGenRot} /></Row>
+            <Row label={t('props.rotation')}><NumberInput value={frameToEuler(objectWorldFrame(doc,`gen:${gen.id}`))[0]} step={15} unit="°" onCommit={setGenRot} /></Row>
           </Section>
           <TransformPanel />
+          {gen.type==='schrank'&&<FittingLibrary/>}
           <div className="pad"><button className="btn subtle" onClick={() => explodeGenerator(gen.id)}>{t('menu.explode')}</button></div>
         </>
       )}
@@ -87,12 +94,13 @@ function ProcessingList({ ids }: { ids: string[] }) {
   const t = useT();
   const ev = useEvaluated();
   const e = ev.elements.find((x) => x.id === ids[0]);
-  if (!e || e.all.length === 0) return null;
+  if (!e) return null;
   const counts = new Map<string, number>();
   for (const p of e.all) counts.set(p.type, (counts.get(p.type) ?? 0) + 1);
   return (
     <div className="proc-list">
       {[...counts.entries()].map(([k, n]) => <span key={k} className="chip">{n}× {has(`proc.${k}`) ? t(`proc.${k}`) : k}</span>)}
+      {ev.joints.filter(j=>j.a===e.id||j.b===e.id).map(j=><button key={j.id} className="chip" onClick={()=>setState({dialog:{type:'joint',id:j.id,a:j.a,b:j.b}})}>{t(`joint.${j.type}`)} · {ev.elements.find(other=>other.id===(j.a===e.id?j.b:j.a))?.name}</button>)}
     </div>
   );
 }
@@ -103,7 +111,7 @@ function ElementEditor({ id }: { id: string }) {
   const e = ev.elements.find((x) => x.id === id)!;
   const set = (fn: (el: (typeof getState extends () => infer S ? S : never)['doc']['elements'][number]) => void) => updateDoc((d) => {
     const el = d.elements.find((x) => x.id === id);
-    if (el) fn(el);
+    if (el) {const local=el.frame;el.frame=objectWorldFrame(d,id);fn(el);const world=el.frame;el.frame=local;setObjectWorldFrame(d,id,world);}
   });
   const euler = frameToEuler(e.frame);
   let kg = 0;
@@ -112,6 +120,7 @@ function ElementEditor({ id }: { id: string }) {
     <>
       <div className="panel-title"><span className="pos-badge">{e.pos}</span> <TextInput value={e.name} onCommit={(v) => set((el) => { el.name = v; })} /></div>
       <div className="pad">
+        <MembershipEditor objectKey={id}/>
         <Row label={t('props.material')}><MaterialSelect value={e.materialId} catalog={ev.catalog} onChange={(m) => set((el) => { el.materialId = m; })} /></Row>
         <Row label={t('props.length')}><NumberInput value={e.length} min={1} unit="mm" onCommit={(v) => set((el) => { el.length = v; })} /></Row>
         <Row label={t('props.width')}><NumberInput value={e.width} min={1} unit="mm" onCommit={(v) => set((el) => { el.width = v; })} /></Row>
@@ -132,35 +141,11 @@ function ElementEditor({ id }: { id: string }) {
 }
 
 function JointEditor({ id }: { id: string }) {
-  const t = useT();
-  const doc = useApp((s) => s.doc);
-  const j = doc.joints.find((x) => x.id === id);
+  const t=useT(),ev=useEvaluated(),j=ev.joints.find(x=>x.id===id);
   if (!j) return null;
-  const defs = JOINT_PARAMS[j.type];
-  const set = (k: string, v: ParamValue) => updateDoc((d) => {
-    const jj = d.joints.find((x) => x.id === id);
-    if (jj) jj.params[k] = v;
-  });
-  return (
-    <>
-      <div className="panel-title">⋈ {t(`joint.${j.type}`)}</div>
-      <div className="pad">
-        {defs.map((p) => {
-          const v = j.params[p.id] ?? p.default;
-          return (
-            <Row key={p.id} label={t(`jparam.${p.id}`)}>
-              {p.type === 'number' && <NumberInput value={Number(v)} min={p.min} max={p.max} step={p.step} unit={p.unit} onCommit={(n) => set(p.id, n)} />}
-              {p.type === 'boolean' && <input type="checkbox" checked={Boolean(v)} onChange={(e) => set(p.id, e.target.checked)} />}
-              {p.type === 'select' && (
-                <select value={String(v)} onChange={(e) => set(p.id, e.target.value)}>
-                  {p.options!.map((o) => <option key={o} value={o}>{has(`opt.${o}`) ? t(`opt.${o}`) : o}</option>)}
-                </select>
-              )}
-            </Row>
-          );
-        })}
-        <button className="btn subtle" onClick={() => { const a = j.a; updateDoc((d) => { const jj = d.joints.find((x) => x.id === id); if (jj) { jj.a = jj.b; jj.b = a; } }); }}>A ⇄ B</button>
-      </div>
-    </>
-  );
+  return <><div className="panel-title">⋈ {t(`joint.${j.type}`)}</div><div className="pad">
+    <p>A: {ev.elements.find(e=>e.id===j.a)?.name??j.a}</p><p>B: {ev.elements.find(e=>e.id===j.b)?.name??j.b}</p>
+    {j.suppressed&&<p className="warn">{t('jointEdit.suppressed')}</p>}
+    <button className="btn" onClick={()=>setState({dialog:{type:'joint',id:j.id,a:j.a,b:j.b}})}>{t(j.suppressed?'jointEdit.restore':'jointEdit.title')}</button>
+  </div></>;
 }

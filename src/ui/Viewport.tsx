@@ -1,3 +1,4 @@
+import { movableRoots, objectWorldFrame, setObjectWorldFrame } from '../core/assemblies';
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -7,12 +8,17 @@ import { findMaterial } from '../core/catalog';
 import type { EvalElement, Evaluated } from '../core/evaluate';
 import { frameMatrix, rotateFrame, type Frame, type Vec3 } from '../core/math';
 import { geom, geomSig } from './geomClient';
+import { motionMatrix, motionOpenness } from './motion';
+import { orbitCamera } from './orbit';
+import type { SnapEdge } from './precision';
 import { tools, type ViewApi } from './tools';
 import { getState, setState, subscribe, evaluated, updateDoc, type AppState } from './store';
 import { changeProjection, fitCamera, resizeCamera, VIEW_DIRECTIONS, type CadCamera, type ViewName } from './cameraMath';
 import { configureCadNavigation } from './navigation';
 import { pickPartIds, resolveSelection, visibleElements } from './selection';
 export type { ViewName } from './cameraMath';
+
+type ElementMotion = NonNullable<import('../core/model').Element['motion']>;
 
 const ROLE_COLORS: Record<string, string> = {
   rafter: '#d9a441', purlin: '#b5651d', ridgePurlin: '#8b4513', wallPlate: '#a0522d', post: '#6b8e23', collarTie: '#cd853f', tieBeam: '#bc8f8f', strut: '#9acd32', kneeBrace: '#9acd32',
@@ -48,12 +54,12 @@ class SceneView implements ViewApi {
   layer = new THREE.Group();
   gizmo: TransformControls;
   proxy = new THREE.Object3D();
-  target: { kind: 'gen' | 'els'; ids: string[] } | null = null;
+  target: { kind: 'objects'; ids: string[] } | null = null;
   dragStart = new THREE.Vector3();
   dragStartRot = 0;
   dragBase = new Map<THREE.Object3D, THREE.Matrix4>();
   gizmoBusy = false;
-  onMove: ((t: { kind: 'gen' | 'els'; ids: string[] }, delta: Vec3, rotZ: number, pivot: Vec3) => void) | null = null;
+  onMove: ((t: { kind: 'objects'; ids: string[] }, delta: Vec3, rotZ: number, pivot: Vec3) => void) | null = null;
 
   constructor(private host: HTMLDivElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -221,9 +227,11 @@ class SceneView implements ViewApi {
   }
 
   update(ev: Evaluated, s: AppState) {
-    const visible=visibleElements(ev.elements,s);
+    let visible=visibleElements(ev.elements,s);
+    const jointPreview=s.jointPreview?.base===s.doc?s.jointPreview:null;
+    if(jointPreview){const visibleIds=new Set(visible.map(e=>e.id));visible=ev.elements.filter(e=>jointPreview.ids.includes(e.id)||(jointPreview.showContext&&visibleIds.has(e.id)));}
     geom.request(visible);
-    const sel = new Set(s.selection);
+    const sel = new Set(resolveSelection(ev,s.selection));
     const selGens = new Set(s.selection.filter((x) => x.startsWith('gen:')).map((x) => x.slice(4)));
     const temporary=new Set<THREE.Material>();
     this.root.traverse(o=>{
@@ -246,7 +254,7 @@ class SceneView implements ViewApi {
       else {
         try { color = e.color ?? findMaterial(ev.catalog, e.materialId).color; } catch { /* keep grey */ }
       }
-      const selected = sel.has(e.id) || (e.generator !== undefined && selGens.has(e.generator));
+      const selected = sel.has(e.id) || (e.generator !== undefined && selGens.has(e.generator)) || !!jointPreview?.ids.includes(e.id);
       const preview=s.contextPreview===e.id;
       const mesh = new THREE.Mesh(g.mesh, this.material(color, { xray: s.xray, section: s.section.enabled }));
       const lines = new THREE.LineSegments(g.edges, selected || preview ? edgeSelSec : edgeMatSec);
@@ -255,14 +263,8 @@ class SceneView implements ViewApi {
       grp.matrixAutoUpdate = false;
       const m = new THREE.Matrix4();
       m.set(...(frameMatrix(e.frame) as [number, number, number, number, number, number, number, number, number, number, number, number, number, number, number, number]));
-      const open = e.motion ? Math.max(s.drawerOpen, s.openGroups[e.motion.group] ?? 0) : 0;
-      if (e.motion && open > 0) {
-        const d = e.motion.dir;
-        const k = e.motion.travel * open;
-        m.elements[12] += d[0] * k;
-        m.elements[13] += d[1] * k;
-        m.elements[14] += d[2] * k;
-      }
+      const open = e.motion ? motionOpenness(s,e.motion.group) : 0;
+      if (e.motion && open > 0) m.copy(motionMatrix(m,e.motion,open));
       grp.matrix.copy(m);
       if (e.motion) {
         const base = new THREE.Matrix4();
@@ -316,35 +318,24 @@ class SceneView implements ViewApi {
   /** Fast path: only drawer/door positions changed. */
   updateMotion(s: AppState) {
     for (const g of this.root.children) {
-      const mo = g.userData.motion as { group: string; dir: Vec3; travel: number } | undefined;
+      const mo = g.userData.motion as ElementMotion | undefined;
       if (!mo) continue;
-      const open = Math.max(s.drawerOpen, s.openGroups[mo.group] ?? 0);
-      g.matrix.copy(g.userData.base as THREE.Matrix4);
-      g.matrix.elements[12] += mo.dir[0] * mo.travel * open;
-      g.matrix.elements[13] += mo.dir[1] * mo.travel * open;
-      g.matrix.elements[14] += mo.dir[2] * mo.travel * open;
+      const base = g.userData.base as THREE.Matrix4;
+      const open = motionOpenness(s,mo.group);
+      g.matrix.copy(motionMatrix(base,mo,open));
     }
     this.dirty = true;
   }
 
   targetGroups(): THREE.Object3D[] {
     if (!this.target) return [];
-    const ids = new Set(this.target.ids);
-    return this.root.children.filter((g) => (this.target!.kind === 'gen' ? ids.has(g.userData.generator) : ids.has(g.userData.elementId)));
+    const ids = new Set(resolveSelection(evaluated(),this.target.ids));
+    return this.root.children.filter(g=>ids.has(g.userData.elementId));
   }
 
   private updateGizmo(s: AppState, ev: Evaluated) {
-    const genIds = new Set<string>();
-    const free: string[] = [];
-    for (const id of s.selection) {
-      if (id.startsWith('gen:')) genIds.add(id.slice(4));
-      else if (!id.includes(':')) {
-        const e = ev.elements.find((x) => x.id === id);
-        if (e?.generator) genIds.add(e.generator);
-        else if (e) free.push(e.id);
-      }
-    }
-    this.target = genIds.size === 1 && free.length === 0 ? { kind: 'gen', ids: [...genIds] } : genIds.size === 0 && free.length ? { kind: 'els', ids: free } : null;
+    const roots=movableRoots(s.doc,ev,s.selection);
+    this.target=roots.length?{kind:'objects',ids:roots}:null;
     this.overlay.clear();
     this.overlay.visible = true;
     const groups = this.targetGroups();
@@ -357,10 +348,7 @@ class SceneView implements ViewApi {
     this.dimensionOverlay(box);
     if(s.gizmoMode==='none') {this.gizmo.detach();return;}
     const c = box.getCenter(new THREE.Vector3());
-    if (this.target.kind === 'gen') {
-      const gen = s.doc.generators.find((g) => g.id === this.target!.ids[0]);
-      if (gen) c.set(gen.frame.o[0], gen.frame.o[1], gen.frame.o[2]);
-    } else c.z = box.min.z;
+    if(this.target.ids.length===1){const frame=objectWorldFrame(s.doc,this.target.ids[0]);c.set(...frame.o);}else c.z=box.min.z;
     this.proxy.position.copy(c);
     this.proxy.rotation.set(0, 0, 0);
     this.proxy.updateMatrixWorld();
@@ -424,7 +412,7 @@ class SceneView implements ViewApi {
 
   fitIds(ids: string[]) {
     const ev=evaluated();
-    const set = new Set(ids.flatMap((id) => id.startsWith('gen:')?ev.elements.filter((e) => e.generator===id.slice(4)).map((e) => e.id):id.startsWith('joint:')?(() => {const j=getState().doc.joints.find((j) => j.id===id.slice(6));return j?[j.a,j.b]:[];})():[id]));
+    const set = new Set(resolveSelection(ev,ids));
     const box = new THREE.Box3();
     this.root.updateMatrixWorld(true);
     for (const g of this.root.children) if (set.has(g.userData.elementId)) box.expandByObject(g);
@@ -480,10 +468,35 @@ class SceneView implements ViewApi {
     const meshes: THREE.Object3D[] = [];
     this.root.traverse((o) => { if ((o as THREE.Mesh).isMesh) meshes.push(o); });
     const hits = this.raycaster.intersectObjects(meshes, false);
-    const hit = hits.find((h) => !getState().section.enabled || this.clip.distanceToPoint(h.point) >= 0);
+    const state = getState(), allowed = new Set(evaluated().elements.filter(e => state.selectionFilter === 'all' || e.kind === state.selectionFilter).map(e => e.id));
+    const hit = hits.find((h) => allowed.has(h.object.userData.elementId) && (!state.section.enabled || this.clip.distanceToPoint(h.point) >= 0));
     if (!hit || !hit.face) return null;
     const n = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
     return { id: hit.object.userData.elementId as string, point: [hit.point.x, hit.point.y, hit.point.z], normal: [n.x, n.y, n.z] };
+  }
+
+  snapEdges(): SnapEdge[] {
+    const out: SnapEdge[] = [], state = getState();
+    const allowed = new Set(evaluated().elements.filter(e => (state.selectionFilter === 'all' || e.kind === state.selectionFilter) && !!geom.mesh(geomSig(e)) && !geom.failuresFor(e).length).map(e => e.id));
+    this.root.updateMatrixWorld(true);
+    this.root.traverse(object => {
+      if (!(object instanceof THREE.LineSegments) || !allowed.has(object.parent?.userData.elementId)) return;
+      const positions = object.geometry.getAttribute('position');
+      const point = (index: number): Vec3 => { const p = new THREE.Vector3().fromBufferAttribute(positions, index).applyMatrix4(object.matrixWorld); return [p.x, p.y, p.z]; };
+      for (let i = 0; i + 1 < positions.count; i += 2) {
+        let a = point(i), b = point(i + 1);
+        if (state.section.enabled) {
+          const da = this.clip.distanceToPoint(new THREE.Vector3(...a)), db = this.clip.distanceToPoint(new THREE.Vector3(...b));
+          if (da < 0 && db < 0) continue;
+          if (da * db < 0) {
+            const cut = new THREE.Vector3(...a).lerp(new THREE.Vector3(...b), da / (da-db));
+            if (da < 0) a = [cut.x, cut.y, cut.z]; else b = [cut.x, cut.y, cut.z];
+          }
+        }
+        out.push({ a, b, id: object.parent!.userData.elementId });
+      }
+    });
+    return out;
   }
 
   toScreen(p: Vec3): [number, number] {
@@ -504,7 +517,7 @@ class SceneView implements ViewApi {
 
 /** Smoothly open/close one motion group (drawer, door). */
 export function animateOpen(group: string, to: number) {
-  const from = getState().openGroups[group] ?? 0;
+  const from = motionOpenness(getState(),group);
   const t0 = performance.now();
   const step = () => {
     const k = Math.min(1, (performance.now() - t0) / 350);
@@ -516,7 +529,7 @@ export function animateOpen(group: string, to: number) {
 }
 
 /** Commit a gizmo move/rotation to the document. */
-function moveTarget(target: { kind: 'gen' | 'els'; ids: string[] }, d: Vec3, rotZ: number, pivot: Vec3) {
+function moveTarget(target: { kind: 'objects'; ids: string[] }, d: Vec3, rotZ: number, pivot: Vec3) {
   const snap = getState().snap || 1;
   const r = (v: number) => Math.round(v / snap) * snap;
   const delta: Vec3 = [r(d[0]), r(d[1]), r(d[2])];
@@ -526,16 +539,17 @@ function moveTarget(target: { kind: 'gen' | 'els'; ids: string[] }, d: Vec3, rot
       out = { ...out, o: [out.o[0] + delta[0], out.o[1] + delta[1], out.o[2] + delta[2]] };
       return out;
     };
-    if (target.kind === 'gen') {
-      const g = doc.generators.find((x) => x.id === target.ids[0]);
-      if (g) g.frame = apply(g.frame);
-    } else {
-      for (const e of doc.elements) if (target.ids.includes(e.id)) e.frame = apply(e.frame);
-    }
+    for(const key of target.ids)setObjectWorldFrame(doc,key,apply(objectWorldFrame(doc,key)));
   });
 }
 
 let active: SceneView | null = null;
+
+export function viewportOrbit(yaw: number, pitch: number) {
+  if (!active || getState().tool !== 'select') return;
+  orbitCamera(active.camera, active.controls.target, yaw, pitch);
+  active.controls.update(); active.render();
+}
 
 export function viewportFit(view: ViewName = 'iso') {
   if(active) active.fit(view);else requestAnimationFrame(()=>active?.fit(view));
@@ -562,7 +576,7 @@ export default function Viewport() {
     const theme = () => view.applyTheme(document.documentElement.dataset.theme === 'dark' || (document.documentElement.dataset.theme !== 'light' && media.matches));
     theme();
     media.addEventListener('change', theme);
-    const refresh = () => view.update(evaluated(), getState());
+    const refresh = () => { const state=getState(); view.update(state.jointPreview?.base === state.doc ? state.jointPreview.evaluation : evaluated(), state); };
     view.configureProjection();view.configureNavigation();
     refresh();
     let last = getState();
@@ -572,10 +586,10 @@ export default function Viewport() {
       last = s;
       if(s.cad.projection!==prev.cad.projection) view.configureProjection();
       if(s.cad.navigation!==prev.cad.navigation || s.tool!==prev.tool) view.configureNavigation();
-      if (s.tool !== prev.tool) { tools.reset(); }
+      if (s.tool !== prev.tool || s.workPlane !== prev.workPlane || s.workZ !== prev.workZ || s.projectId !== prev.projectId) { tools.reset(); }
       const motionOnly = s.doc === prev.doc && s.selection === prev.selection && (s.drawerOpen !== prev.drawerOpen || s.openGroups !== prev.openGroups);
       if (motionOnly) view.updateMotion(s);
-      else if (s.doc !== prev.doc || s.selection !== prev.selection || s.colorBy !== prev.colorBy || s.xray !== prev.xray || s.section !== prev.section || s.showLabels !== prev.showLabels || s.gizmoMode !== prev.gizmoMode || s.tool !== prev.tool || s.snap !== prev.snap || s.issueIds !== prev.issueIds || s.visibilityOverrides!==prev.visibilityOverrides || s.isolatedIds!==prev.isolatedIds || s.contextPreview!==prev.contextPreview) refresh();
+      else if (s.doc !== prev.doc || s.selection !== prev.selection || s.colorBy !== prev.colorBy || s.xray !== prev.xray || s.section !== prev.section || s.showLabels !== prev.showLabels || s.gizmoMode !== prev.gizmoMode || s.tool !== prev.tool || s.snap !== prev.snap || s.issueIds !== prev.issueIds || s.visibilityOverrides!==prev.visibilityOverrides || s.isolatedIds!==prev.isolatedIds || s.contextPreview!==prev.contextPreview || s.jointPreview!==prev.jointPreview) refresh();
     });
     const unsubGeom = geom.subscribe(refresh);
     const ro = new ResizeObserver(() => view.resize());
@@ -594,7 +608,7 @@ export default function Viewport() {
       setState({contextMenu:{x:e.clientX,y:e.clientY,ids},contextPreview:null,hover:null,...(ids[0] && !alreadySelected.includes(ids[0])?{selection:[ids[0]]}:{})});
     };
     const onUp = (e: PointerEvent) => {
-      if (view.gizmoBusy) { down = null; return; }
+      if (view.gizmoBusy || getState().dialog) { down = null; return; }
       if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4 || e.button !== 0) {down=null;return;}
       down = null;
       if (getState().tool !== 'select') { tools.click(e.clientX, e.clientY); return; }
@@ -617,7 +631,7 @@ export default function Viewport() {
       const el2 = evaluated().elements.find((x) => x.id === id);
       if (!el2?.motion) return;
       const g = el2.motion.group;
-      const cur = getState().openGroups[g] ?? 0;
+      const cur = motionOpenness(getState(),g);
       animateOpen(g, cur > 0.5 ? 0 : 1);
     };
     let hoverT = 0;

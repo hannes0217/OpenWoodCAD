@@ -1,11 +1,9 @@
+import { JointWorkbench } from '../components/JointWorkbench';
 import { GENERATOR_LIST } from '../../core/generators';
-import { applyJoint, suggestJoints } from '../../core/joints';
-import { uid } from '../../core/math';
-import type { JointType } from '../../core/model';
 import { insertGenerator } from '../actions';
 import { ProjectsDialog } from './ProjectsDialog';
 import { has, useT } from '../i18n';
-import { setState, updateDoc, useApp, useEvaluated } from '../store';
+import { setState, useApp } from '../store';
 
 export const GEN_ICONS: Record<string, string> = {
   kommode: '🗄', regal: '📚', schrank: '🚪', tisch: '🪑', werkbank: '🛠', bett: '🛏', hochbeet: '🌱',
@@ -13,12 +11,13 @@ export const GEN_ICONS: Record<string, string> = {
 };
 
 function Modal({ title, children, onClose, wide }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
+  const t = useT();
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div className={`modal ${wide ? 'wide' : ''}`} onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label={title}>
         <div className="modal-head">
           <h2>{title}</h2>
-          <button className="icon-btn" onClick={onClose} aria-label="close">✕</button>
+          <button className="icon-btn" onClick={onClose} aria-label={t('common.close')}>✕</button>
         </div>
         <div className="modal-body">{children}</div>
       </div>
@@ -31,7 +30,7 @@ export function Dialogs() {
   const close = () => setState({ dialog: null });
   if (!dialog) return null;
   if (dialog.type === 'insert') return <InsertDialog onClose={close} />;
-  if (dialog.type === 'joint') return <JointDialog a={dialog.a} b={dialog.b} onClose={close} />;
+  if (dialog.type === 'joint') return <JointWorkbench a={dialog.a} b={dialog.b} id={dialog.id} onClose={close} />;
   if (dialog.type === 'about') return <AboutDialog onClose={close} />;
   if (dialog.type === 'shortcuts') return <ShortcutsDialog onClose={close} />;
   if (dialog.type === 'projects') return <ProjectsDialog onClose={close} />;
@@ -66,47 +65,13 @@ function InsertDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-function JointDialog({ a, b, onClose }: { a: string; b: string; onClose: () => void }) {
-  const t = useT();
-  const ev = useEvaluated();
-  const ea = ev.elements.find((e) => e.id === a);
-  const eb = ev.elements.find((e) => e.id === b);
-  if (!ea || !eb) return null;
-  const options = suggestJoints(ea, eb);
-  const add = (type: JointType, swap = false) => {
-    const id = uid('j');
-    updateDoc((d) => d.joints.push({ id, type, a: swap ? b : a, b: swap ? a : b, params: {} }));
-    setState({ dialog: null, selection: [`joint:${id}`] });
-  };
-  const works = (type: JointType, swap: boolean) => {
-    const r = applyJoint({ id: 'x', type, a: swap ? b : a, b: swap ? a : b, params: {} }, swap ? eb : ea, swap ? ea : eb);
-    return r.warnings.length === 0 && r.processings.length > 0;
-  };
-  return (
-    <Modal title={t('menu.joint')} onClose={onClose}>
-      <p className="muted">A = {ea.name}, B = {eb.name}</p>
-      <div className="joint-grid">
-        {options.map((o) => (
-          <div key={o} className="joint-option">
-            <strong>{t(`joint.${o}`)}</strong>
-            <div className="btn-row">
-              <button className="btn" disabled={!works(o, false)} onClick={() => add(o, false)}>A → B</button>
-              <button className="btn" disabled={!works(o, true)} onClick={() => add(o, true)}>B → A</button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </Modal>
-  );
-}
-
 function AboutDialog({ onClose }: { onClose: () => void }) {
   const t = useT();
   return (
     <Modal title={t('menu.about')} onClose={onClose}>
       <p><strong>OpenWoodCAD</strong> 0.1 – {t('app.tagline')}</p>
       <p>AGPL-3.0-or-later · OpenCascade (LGPL-2.1) · three.js · React · jsPDF</p>
-      <p className="muted small">Statische Berechnungen dienen der Vorbemessung und ersetzen keinen prüffähigen Standsicherheitsnachweis.</p>
+      <p className="muted small">{t('help.preliminary')}</p>
     </Modal>
   );
 }
@@ -116,11 +81,11 @@ function ShortcutsDialog({ onClose }: { onClose: () => void }) {
   const rows: [string, string][] = [
       ['S / Strg+K', t('cad.search')],
     ['Strg+Z / Strg+Y', `${t('menu.undo')} / ${t('menu.redo')}`], ['Entf', t('menu.delete')], ['Strg+D', t('menu.duplicate')], ['Strg+S', t('menu.save')], ['Strg+O', t('menu.open')], ['Strg+A', t('menu.selectAll')],
-    ['I', t('menu.assistant')], ['B', t('menu.beam')], ['P', t('menu.panel')], ['J', t('menu.joint')], ['F', t('view.fit')], ['1/2/3/4', `${t('view.iso')} / ${t('view.front')} / ${t('view.side')} / ${t('view.top')}`], ['Esc', 'Auswahl / Werkzeug beenden'],
+    ['I', t('menu.assistant')], ['B', t('menu.beam')], ['P', t('menu.panel')], ['J', t('menu.joint')], ['F', t('view.fit')], ['1/2/3/4', `${t('view.iso')} / ${t('view.front')} / ${t('view.side')} / ${t('view.top')}`], ['Esc', t('help.exitTool')],
   ];
   return (
     <Modal title={t('menu.shortcuts')} onClose={onClose}>
-      <table className="table"><tbody>{rows.map(([k, v]) => <tr key={k}><td><kbd>{k}</kbd></td><td>{v}</td></tr>)}</tbody></table>
+      <table className="table"><tbody>{rows.map(([k, v]) => <tr key={k}><td><kbd>{k.replaceAll('Strg',t('help.ctrl')).replaceAll('Entf',t('help.delete'))}</kbd></td><td>{v}</td></tr>)}</tbody></table>
     </Modal>
   );
 }

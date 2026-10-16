@@ -59,7 +59,7 @@ export function IssuesPanel() {
     const h = setTimeout(async () => {
       setChecking(true);
       try {
-        const pairs = await geom.overlaps(ev.elements.filter((e) => !e.hidden));
+        const pairs = await geom.overlaps(ev.elements);
         if (!cancelled) {setOverlaps(overlapIssues(ev, pairs));setChecked(true);setCheckedFor(ev);}
       }catch(error){if(!cancelled)setCheckError(String(error));
       } finally {

@@ -1,7 +1,7 @@
 // Solid cache shared by worker and tests: one OCCT solid per geometry signature.
 
 import { ProjectionCamera, exportSTEP, type Shape3D } from 'replicad';
-import { applyFrame, buildLocalSolid, compound, meshShape, project, volumeOf, type MeshData, type Projection } from './kernel';
+import { applyFrame, buildLocalSolid, clipShape, compound, meshShape, project, volumeOf, type MeshData, type Projection } from './kernel';
 import type { PlacedSpec, SolidSpec, ViewSpec } from './protocol';
 
 const cache = new Map<string, { shape: Shape3D; failed: string[] }>();
@@ -49,11 +49,18 @@ function completeSolid(spec:SolidSpec):Shape3D {
 export function projectViews(items: PlacedSpec[], views: ViewSpec[]): Projection[] {
   const shapes = placed(items);
   if (shapes.length === 0) return views.map(() => ({ visible: [], hidden: [], bounds: [0, 0, 0, 0] as [number, number, number, number] }));
-  const all = compound(shapes);
+  const all = compound(shapes) as Shape3D;
   try {return views.map((v) => {
-    if (v.kind === 'plane') return project(all, v.plane);
-    const cam = new ProjectionCamera(v.position, v.direction, v.xAxis);
-    try{return project(all,cam);}finally{cam.delete();}
+    let clipped=all;
+    try {
+      for (const plane of v.clipPlanes??[]) {
+        const next=clipShape(clipped,plane);
+        if(clipped!==all)clipped.delete();clipped=next;
+      }
+      if (v.kind === 'plane') return project(clipped, v.plane);
+      const cam = new ProjectionCamera(v.position, v.direction, v.xAxis);
+      try{return project(clipped,cam);}finally{cam.delete();}
+    }finally{if(clipped!==all)clipped.delete();}
   });
   }finally{all.delete();}
 }

@@ -21,7 +21,7 @@ export interface TitleInfo {
 export interface DxfPrim {
   layer: string;
   segs?: Seg[];
-  text?: { x: number; y: number; h: number; s: string; anchor: 'start' | 'middle' | 'end' };
+  text?: { x: number; y: number; h: number; s: string; anchor: 'start' | 'middle' | 'end'; rotate?: number };
 }
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -62,7 +62,7 @@ export class Sheet {
     const anchor = opts.anchor ?? 'start';
     const rot = opts.rotate ? ` transform="rotate(${opts.rotate} ${n(x)} ${n(y)})"` : '';
     this.out.push(`<text x="${n(x)}" y="${n(y)}" font-family="Helvetica, Arial, sans-serif" font-size="${size}" text-anchor="${anchor}" font-weight="${opts.weight ?? 'normal'}" fill="${opts.color ?? '#000'}"${rot}>${esc(s)}</text>`);
-    if (!opts.rotate) this.prims.push({ layer: 'TEXT', text: { x, y, h: size * 0.72, s, anchor } });
+    this.prims.push({ layer: 'TEXT', text: { x, y, h: size * 0.72, s, anchor, rotate: opts.rotate } });
   }
 
   path(segs: Seg[], lw: number, opts: { dash?: string; color?: string; fill?: string; layer?: string } = {}) {
@@ -82,6 +82,7 @@ export class Sheet {
     const l = Math.hypot(dx, dy) || 1;
     const ux = dx / l, uy = dy / l;
     const p = (a: number, b: number) => `${n(a)},${n(b)}`;
+    this.prims.push({layer:'DIM',segs:[{c:'M',x,y},{c:'L',x:x-ux*L-uy*W,y:y-uy*L+ux*W},{c:'L',x:x-ux*L+uy*W,y:y-uy*L-ux*W},{c:'Z'}]});
     this.out.push(`<polygon points="${p(x, y)} ${p(x - ux * L - uy * W, y - uy * L + ux * W)} ${p(x - ux * L + uy * W, y - uy * L - ux * W)}" fill="#000" stroke="none"/>`);
   }
 
@@ -113,8 +114,19 @@ export class Sheet {
       const tw = label.length * size * 0.55;
       const ty = h > tw + 2 ? (y1 + y2) / 2 : Math.min(y1, y2) - tw / 2 - 1.5;
       this.text(xx - 0.8, ty, label, { size, anchor: 'middle', rotate: -90 });
-      this.prims.push({ layer: 'TEXT', text: { x: xx - 0.8, y: ty, h: size * 0.72, s: label, anchor: 'middle' } });
+
     }
+  }
+
+  /** Aligned measurement in drawing-plane coordinates. */
+  dimAligned(x1: number, y1: number, x2: number, y2: number, offset: number, label: string) {
+    const length=Math.hypot(x2-x1,y2-y1); if(length<1e-6)return;
+    const dx=(x2-x1)/length,dy=(y2-y1)/length,nx=-dy*offset,ny=dx*offset;
+    this.line(x1,y1,x1+nx,y1+ny,LW.dim,{layer:'DIM'});this.line(x2,y2,x2+nx,y2+ny,LW.dim,{layer:'DIM'});
+    this.line(x1+nx,y1+ny,x2+nx,y2+ny,LW.dim,{layer:'DIM'});
+    this.arrow(x1+nx,y1+ny,-dx,-dy);this.arrow(x2+nx,y2+ny,dx,dy);
+    let angle=Math.atan2(dy,dx)*180/Math.PI;if(angle>90)angle-=180;if(angle< -90)angle+=180;
+    this.text((x1+x2)/2+nx,(y1+y2)/2+ny-1,label,{size:2.5,anchor:'middle',rotate:angle});
   }
 
   /** Chain of dimensions along one line through sorted sheet positions; short segments get staggered labels. */

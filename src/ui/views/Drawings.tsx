@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { sheetsToDxf } from '../../drawing/dxf';
 import type { SheetFormat } from '../../drawing/sheet';
 import { generateDrawings, type DrawnSheet } from '../../drawing/sheets';
+import { DrawingEditor } from '../components/DrawingEditor';
+import { DrawingJobs, drawingPrintHtml } from '../drawingJobs';
 import { download, safeName } from '../actions';
 import { geom } from '../geomClient';
 import { t, useT } from '../i18n';
@@ -19,61 +21,59 @@ export function DrawingsView() {
   const de = lang === 'de';
   const [format, setFormat] = useState<SheetFormat>('A3');
   const [include, setInclude] = useState({ overview: true, views: true, parts: true, lists: true, nesting: true });
-  const key = `${format}|${JSON.stringify(include)}|${lang}`;
-  const [sheets, setSheets] = useState<DrawnSheet[]>(cache && cache.doc === doc && cache.key === key ? cache.sheets : []);
-  const [busy, setBusy] = useState(false);
+  const [revision,setRevision]=useState(0);
+  const key = `${format}|${JSON.stringify(include)}|${lang}|${revision}`;
+  const [result,setResult]=useState<typeof cache>(cache);
+  const sheets=result?.doc===doc&&result.key===key?result.sheets:[];
+  const [building,setBuilding]=useState(false),[exporting,setExporting]=useState(false);
+  const busy=building||exporting;
+  const [error,setError]=useState<string|null>(null);
   const [progress, setProgress] = useState<[number, number] | null>(null);
   const [zoom, setZoom] = useState<number | null>(null);
-  const run = useRef(0);
+  const jobs=useRef(new DrawingJobs()),latestKey=useRef(key);
+  latestKey.current=key;
+  useEffect(()=>{
+    const token=jobs.current.begin(doc,key);
+    const current=()=>jobs.current.current(token,getState().doc,latestKey.current);
+    setZoom(null);setProgress(null);setError(null);
+    if(!ev.elements.length){setResult(null);setBuilding(false);return()=>jobs.current.cancel();}
+    if(cache?.doc===doc&&cache.key===key){setResult(cache);setBuilding(false);return()=>jobs.current.cancel();}
+    setBuilding(true);
+    const timer=setTimeout(async()=>{
+      try{
+        const out=await generateDrawings(ev,prod,{
+          format,lang,date:new Date().toLocaleDateString(de?'de-DE':'en-GB'),project:doc.project,t,
+          projector:(elements,views)=>geom.project(elements,views),include,customViews:doc.drawingViews,
+          onProgress:(done,total)=>{if(current())setProgress([done,total]);},
+        });
+        if(!current())return;
+        cache={doc,key,sheets:out};setResult(cache);
+      }catch(reason){if(current()){setResult(null);setError(String((reason as Error).message??reason));}}
+      finally{if(current())setBuilding(false);}
+    },300);
+    return()=>{clearTimeout(timer);jobs.current.cancel();};
+    // Document identity includes every geometry, annotation and price change.
+  },[doc,key]);
 
-  const build = async () => {
-    if (!ev.elements.length) return;
-    const my = ++run.current;
-    setBusy(true);
-    setProgress(null);
-    try {
-      const out = await generateDrawings(ev, prod, {
-        format, lang, date: new Date().toLocaleDateString(de ? 'de-DE' : 'en-GB'), project: doc.project, t,
-        projector: (els, views) => geom.project(els, views), include, onProgress: (a, b) => my === run.current && setProgress([a, b]),
-      });
-      if (my !== run.current) return;
-      cache = { doc, key, sheets: out };
-      setSheets(out);
-    } catch (err) {
-      toast(String((err as Error).message ?? err), 'error');
-    } finally {
-      if (my === run.current) setBusy(false);
-    }
+  const valid=()=>getState().doc===doc&&latestKey.current===key&&sheets.length>0&&!building;
+  const name=safeName(doc.project.name);
+  const exportPdf=async()=>{
+    if(!valid()||exporting)return;
+    const snapshot=sheets;setExporting(true);
+    try{
+      const {sheetsToPdf}=await import('../../drawing/pdf');
+      const data=await sheetsToPdf(snapshot,doc.project.name);
+      if(!valid()){toast(t('drawing.stale'),'error');return;}
+      download(`${name}_zeichnungen.pdf`,data,'application/pdf');
+    }catch(reason){toast(String(reason),'error');}finally{setExporting(false);}
   };
-
-  // Regenerate automatically when the model or options change.
-  useEffect(() => {
-    if (cache && cache.doc === doc && cache.key === key) { setSheets(cache.sheets); return; }
-    const h = setTimeout(build, 300);
-    return () => clearTimeout(h);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc, key]);
-
-  const name = safeName(getState().doc.project.name);
-  const exportPdf = async () => {
-    setBusy(true);
-    try {
-      const { sheetsToPdf } = await import('../../drawing/pdf');
-      download(`${name}_zeichnungen.pdf`, await sheetsToPdf(sheets, doc.project.name), 'application/pdf');
-    } catch (err) {
-      toast(String((err as Error).message ?? err), 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-  const exportDxf = () => download(`${name}_zeichnungen.dxf`, sheetsToDxf(sheets), 'application/dxf');
-  const exportSvg = (s: DrawnSheet, i: number) => download(`${name}_blatt${i + 1}.svg`, s.svg, 'image/svg+xml');
-  const print = () => {
-    const w = window.open('', '_blank');
-    if (!w) return;
-    w.document.write(`<html><head><title>${doc.project.name}</title><style>@page{size:${format} landscape;margin:0}body{margin:0}svg{width:100vw;height:auto;page-break-after:always;display:block}</style></head><body>${sheets.map((s) => s.svg).join('')}</body></html>`);
-    w.document.close();
-    setTimeout(() => w.print(), 400);
+  const exportDxf=()=>{if(valid())download(`${name}_zeichnungen.dxf`,sheetsToDxf(sheets),'application/dxf');};
+  const exportSvg=(sheet:DrawnSheet,index:number)=>{if(valid())download(`${name}_blatt${index+1}.svg`,sheet.svg,'image/svg+xml');};
+  const print=()=>{
+    if(!valid())return;
+    const output=window.open('','_blank');if(!output)return;
+    output.document.write(drawingPrintHtml(doc.project.name,format,sheets.map(s=>s.svg)));
+    output.document.close();setTimeout(()=>output.print(),400);
   };
 
   return (
@@ -89,11 +89,15 @@ export function DrawingsView() {
             {de ? { overview: 'Übersicht', views: 'Ansichten', parts: 'Einzelteile', lists: 'Listen', nesting: 'Zuschnittpläne' }[k] : { overview: 'Overview', views: 'Views', parts: 'Parts', lists: 'Lists', nesting: 'Cutting plans' }[k]}
           </label>
         ))}
+        <button className="btn subtle" onClick={()=>setRevision(value=>value+1)}>{t('drawing.rebuild')}</button>
         <span className="grow" />
         <button className="btn" disabled={busy || !sheets.length} onClick={exportPdf}>PDF</button>
         <button className="btn subtle" disabled={busy || !sheets.length} onClick={exportDxf}>DXF</button>
         <button className="btn subtle" disabled={busy || !sheets.length} onClick={print}>{t('common.print')}</button>
       </div>
+      <p className="muted small">{t('drawing.scope')}</p>
+      <DrawingEditor/>
+      {error&&<p className="warn" role="alert">{t('drawing.failure',{error})}</p>}
       {!ev.elements.length && <p className="muted">{t('tree.empty')}</p>}
       {busy && <p className="muted">{t('common.loading')} {progress ? `(${progress[0]}/${progress[1]})` : ''}</p>}
       <div className="sheet-grid">
@@ -102,7 +106,7 @@ export function DrawingsView() {
             <div className="sheet-frame" onClick={() => setZoom(i)} dangerouslySetInnerHTML={{ __html: s.svg }} />
             <figcaption>
               <span>{i + 1}. {s.title}</span>
-              <button className="link" onClick={() => exportSvg(s, i)}>SVG</button>
+              <button className="link" disabled={busy} onClick={() => exportSvg(s, i)}>SVG</button>
             </figcaption>
           </figure>
         ))}

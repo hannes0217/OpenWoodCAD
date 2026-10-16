@@ -1,0 +1,28 @@
+export const assemblyDe:Record<string,string>={
+  'assembly.localOperation':'Geometriewerte im lokalen Koordinatensystem des Bauteils.',
+  'assembly.title':'Baugruppen','assembly.newName':'Neue Baugruppe','assembly.create':'Auswahl zu Baugruppe',
+  'assembly.dissolve':'Baugruppe auflösen','assembly.parent':'Übergeordnete Baugruppe','assembly.root':'Projektwurzel',
+  'assembly.members':'{n} Bauteile in dieser Baugruppe','assembly.local':'Platzierung in Weltkoordinaten; Mitglieder bleiben relativ zur Baugruppe.',
+  'assembly.operations':'Bearbeitungen','assembly.derived':'Aus Verbindung','assembly.explicit':'Direkte Bearbeitung',
+  'assembly.suppressed':'Unterdrückt','assembly.suppress':'Bearbeitung unterdrücken','assembly.restore':'Bearbeitung aktivieren',
+  'assembly.up':'Nach vorne','assembly.down':'Nach hinten','assembly.origin':'Ursprung','assembly.axis':'Achse',
+  'assembly.diameter':'Durchmesser','assembly.depth':'Tiefe','assembly.through':'Durchgehend',
+  'assembly.jointEdit':'Über Verbindung bearbeiten','assembly.generatorEdit':'Über Vorlage bearbeiten',
+  'assembly.dependencies':'Abhängigkeiten','assembly.dependencyCount':'{n} Schritte im Abhängigkeitsgraph',
+  'assembly.reference':'Stabile Bauteil-/Bearbeitungsreferenz','assembly.noOrigin':'Diese Bearbeitung besitzt keinen eindeutigen Punktursprung.',
+  'assembly.missing':'Baugruppenreferenz fehlt.','assembly.cycle':'Baugruppen dürfen keinen Kreis bilden.','assembly.empty':'Keine bewegbaren Objekte gewählt.',
+};
+export const assemblyEn:Record<string,string>={
+  'assembly.localOperation':'Geometry values use the local coordinate system of the part.',
+  'assembly.title':'Assemblies','assembly.newName':'New assembly','assembly.create':'Create assembly from selection',
+  'assembly.dissolve':'Dissolve assembly','assembly.parent':'Parent assembly','assembly.root':'Project root',
+  'assembly.members':'{n} parts in this assembly','assembly.local':'World placement; members remain relative to the assembly.',
+  'assembly.operations':'Operations','assembly.derived':'From joint','assembly.explicit':'Direct operation',
+  'assembly.suppressed':'Suppressed','assembly.suppress':'Suppress operation','assembly.restore':'Enable operation',
+  'assembly.up':'Move earlier','assembly.down':'Move later','assembly.origin':'Origin','assembly.axis':'Axis',
+  'assembly.diameter':'Diameter','assembly.depth':'Depth','assembly.through':'Through hole',
+  'assembly.jointEdit':'Edit through joint','assembly.generatorEdit':'Edit through template',
+  'assembly.dependencies':'Dependencies','assembly.dependencyCount':'{n} steps in dependency graph',
+  'assembly.reference':'Stable part / operation reference','assembly.noOrigin':'This operation has no unique point origin.',
+  'assembly.missing':'Assembly reference is missing.','assembly.cycle':'Assemblies cannot contain cycles.','assembly.empty':'No movable objects selected.',
+};

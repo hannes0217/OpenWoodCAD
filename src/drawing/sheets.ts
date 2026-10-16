@@ -3,10 +3,11 @@ import { elementCorners } from '../core/elements';
 import type { EvalElement, Evaluated } from '../core/evaluate';
 import type { PartRow } from '../core/lists';
 import { neg, norm, type Vec3 } from '../core/math';
-import type { ProjectInfo } from '../core/model';
+import type { DrawingView, ProjectInfo } from '../core/model';
 import type { Production } from '../core/production';
 import type { Projection } from '../geom/kernel';
 import type { ViewSpec } from '../geom/protocol';
+import { customProjection, drawingPoint, projectDrawingPoint } from './custom';
 import { featureStations } from './features';
 import { pathBounds } from './paths';
 import { LW, Sheet, fitScale, scaleLabel, type DxfPrim, type SheetFormat, type TitleInfo } from './sheet';
@@ -33,6 +34,7 @@ export interface DrawingOptions {
   include: { overview: boolean; views: boolean; parts: boolean; lists: boolean; nesting: boolean };
   /** Overview image (PNG data URL from the 3D view), optional. */
   snapshot?: string | null;
+  customViews?: DrawingView[];
   onProgress?: (done: number, total: number) => void;
 }
 
@@ -55,7 +57,7 @@ function modelBounds(els: EvalElement[]): { min: Vec3; max: Vec3 } {
 export async function generateDrawings(ev: Evaluated, prod: Production, o: DrawingOptions): Promise<DrawnSheet[]> {
   const t = o.t;
   const de = o.lang === 'de';
-  const els = ev.elements.filter((e) => !e.hidden);
+  const els = ev.elements;
   const sheets: { sheet: Sheet; title: string }[] = [];
   const baseInfo = (title: string, scale: string): TitleInfo => ({ project: o.project.name, customer: o.project.customer, author: o.project.author, title, scale, date: o.date, sheet: '' });
   const matName = (id: string) => { try { return materialName(findMaterial(ev.catalog, id), o.lang); } catch { return id; } };
@@ -256,6 +258,34 @@ export async function generateDrawings(ev: Evaluated, prod: Production, o: Drawi
       }
       sheets.push({ sheet: s, title: de ? 'Holz-Zuschnitt' : 'Timber cutting' });
     }
+  }
+
+  // User-defined workshop sheets. Dimensions reference live stock corners.
+  for(const view of o.customViews??[]) {
+    const projection=(await o.projector(els,[customProjection(view)]))[0];
+    const bounds=pathBounds(projection.visible);
+    if(!bounds)throw new Error(o.t('drawing.emptyView',{name:view.title}));
+    const base=new Sheet(o.format,baseInfo('', ''));
+    const width=bounds[2]-bounds[0],height=bounds[3]-bounds[1];
+    const ratio=fitScale(Math.max(width,1),Math.max(height,1),base.area.w-55,base.area.h-55),sc=1/ratio;
+    const title=view.title||o.t('drawing.custom');
+    const sheet=new Sheet(o.format,baseInfo(title,scaleLabel(ratio)));
+    const ox=sheet.area.x+(sheet.area.w-width*sc)/2-bounds[0]*sc,oy=sheet.area.y+(sheet.area.h-height*sc)/2-bounds[1]*sc;
+    sheet.view(projection,{ox,oy,s:sc},{hidden:true});
+    if(view.sectionOffset!==undefined)sheet.text(sheet.area.x,sheet.area.y+4,o.t('drawing.sectionNote',{offset:view.sectionOffset,axis:view.view==='front'?'Y':view.view==='side'?'X':'Z'}),{size:2.5});
+    if(view.detail)sheet.text(sheet.area.x,sheet.area.y+9,o.t('drawing.detail'),{size:2.5});
+    for(const dimension of view.dimensions){
+      let a:[number,number],b:[number,number];
+      try{a=projectDrawingPoint(drawingPoint(ev,dimension.a),view.view);b=projectDrawingPoint(drawingPoint(ev,dimension.b),view.view);}catch{throw new Error(o.t('drawing.missingReference',{name:title}));}
+      if(view.detail&&[a,b].some(p=>Math.abs(p[0]-view.detail!.u)>view.detail!.width/2+1e-3||Math.abs(-p[1]-view.detail!.v)>view.detail!.height/2+1e-3))throw new Error(o.t('drawing.outsideDetail',{name:title}));
+      const delta=dimension.orientation==='h'?Math.abs(b[0]-a[0]):dimension.orientation==='v'?Math.abs(b[1]-a[1]):Math.hypot(b[0]-a[0],b[1]-a[1]);
+      if(delta<1e-6)throw new Error(o.t('drawing.zeroDimension',{name:title}));
+      const x1=ox+a[0]*sc,y1=oy+a[1]*sc,x2=ox+b[0]*sc,y2=oy+b[1]*sc;
+      if(dimension.orientation==='aligned')sheet.dimAligned(x1,y1,x2,y2,dimension.offset,r1(delta));
+      else sheet.dim(x1,y1,x2,y2,dimension.offset,r1(delta),dimension.orientation);
+    }
+    sheet.text(sheet.area.x,sheet.area.y+sheet.area.h,o.t('drawing.stockReferences'),{size:2,color:'#555'});
+    sheets.push({sheet,title});
   }
 
   const total = sheets.length;

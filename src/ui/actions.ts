@@ -1,6 +1,8 @@
+import { copyObjects, groupPath, groupFrame, transformMotion } from '../core/assemblies';
+import { parseProcessingKey } from '../core/references';
 import { GENERATORS } from '../core/generators';
 import { withDefaults } from '../core/generators/types';
-import { WORLD, uid, type Vec3 } from '../core/math';
+import { WORLD, uid, relativeFrame, type Vec3 } from '../core/math';
 import { emptyDocument, type Element, type OwcDocument } from '../core/model';
 import { validateDocument } from '../core/validate';
 import { t } from './i18n';
@@ -95,6 +97,9 @@ export function deleteSelection(): void {
   if (!sel.length) return;
   const ev = evaluated();
   const gens = new Set(sel.filter((s) => s.startsWith('gen:')).map((s) => s.slice(4)));
+  const groups=new Set(sel.filter(s=>s.startsWith('group:')).map(s=>s.slice(6)));
+  for(const group of getState().doc.groups)if(groupPath(getState().doc,group.parent).some(id=>groups.has(id)))groups.add(group.id);
+  for(const gen of getState().doc.generators)if(gen.groupId&&groups.has(gen.groupId))gens.add(gen.id);
   const joints = new Set(sel.filter((s) => s.startsWith('joint:')).map((s) => s.slice(6)));
   const elems = new Set<string>();
   for (const s of sel) {
@@ -103,38 +108,23 @@ export function deleteSelection(): void {
     if (e.generator) gens.add(e.generator);
     else elems.add(e.id);
   }
+  for (const e of ev.elements) if (e.generator && gens.has(e.generator) || e.groupId && groups.has(e.groupId)) elems.add(e.id);
   updateDoc((d) => {
+    d.groups=d.groups.filter(g=>!groups.has(g.id));
+    for(const key of sel){const ref=parseProcessingKey(key);if(ref){const part=d.elements.find(e=>e.id===ref.elementId);if(part)part.processings=part.processings.filter(p=>p.id!==ref.processingId);}}
     d.generators = d.generators.filter((g) => !gens.has(g.id));
     d.elements = d.elements.filter((e) => !elems.has(e.id));
-    d.joints = d.joints.filter((j) => !joints.has(j.id) && !elems.has(j.a) && !elems.has(j.b));
+    d.joints = d.joints.filter(j => !joints.has(j.id) && !elems.has(j.a) && !elems.has(j.b) && (!j.generator || !gens.has(j.generator)));
+    for (const j of ev.joints) if (joints.has(j.id) && j.generator && !gens.has(j.generator) && !elems.has(j.a) && !elems.has(j.b)) d.joints.push({ ...structuredClone(j), suppressed: true });
   });
   setState({ selection: [] });
 }
 
 export function duplicateSelection(offset: Vec3 = [200, 200, 0]): void {
-  const sel = getState().selection;
-  const ev = evaluated();
-  const newSel: string[] = [];
-  updateDoc((d) => {
-    const genIds = new Set(sel.filter((s) => s.startsWith('gen:')).map((s) => s.slice(4)));
-    for (const s of sel) {
-      const e = ev.elements.find((x) => x.id === s);
-      if (e?.generator) genIds.add(e.generator);
-    }
-    for (const g of d.generators.filter((x) => genIds.has(x.id))) {
-      const id = uid('g');
-      d.generators.push({ ...structuredClone(g), id, name: `${g.name} (2)`, frame: { ...g.frame, o: [g.frame.o[0] + offset[0], g.frame.o[1] + offset[1], g.frame.o[2] + offset[2]] } });
-      newSel.push(`gen:${id}`);
-    }
-    for (const e of d.elements.filter((x) => sel.includes(x.id))) {
-      const id = uid('b');
-      d.elements.push({ ...structuredClone(e), id, frame: { ...e.frame, o: [e.frame.o[0] + offset[0], e.frame.o[1] + offset[1], e.frame.o[2] + offset[2]] } });
-      newSel.push(id);
-    }
-  });
-  setState({ selection: newSel });
+  const ev=evaluated();let selection:string[]=[];
+  updateDoc(doc=>{selection=copyObjects(doc,ev,getState().selection,offset);});
+  setState({selection});
 }
-
 /** Turn a generator into free elements and joints (keeps geometry, loses parameters). */
 export function explodeGenerator(genId: string): void {
   const ev = evaluated();
@@ -142,12 +132,13 @@ export function explodeGenerator(genId: string): void {
   if (!g) return;
   const elems: Element[] = ev.elements
     .filter((e) => e.generator === genId)
-    .map((e) => ({ id: e.id, kind: e.kind, name: e.name, role: e.role, frame: e.frame, length: e.length, width: e.width, height: e.height, outline: e.outline, materialId: e.materialId, edges: e.edges, processings: e.processings, motion: e.motion, tags: e.tags }));
+    .map((e) => ({ id: e.id, kind: e.kind, name: e.name, role: e.role, frame: relativeFrame(groupFrame(getState().doc,g.groupId),e.frame), groupId:g.groupId, length: e.length, width: e.width, height: e.height, outline: e.outline, materialId: e.materialId, edges: e.edges, processings: e.processings, motion: transformMotion(e.motion,groupFrame(getState().doc,g.groupId),true), tags: e.tags }));
   const joints = ev.joints.filter((j) => j.generator === genId).map((j) => ({ ...j, generator: undefined }));
   const hw = ev.hardware.filter((h) => h.source === genId);
   updateDoc((d: OwcDocument) => {
     d.generators = d.generators.filter((x) => x.id !== genId);
     d.elements.push(...elems);
+    d.joints = d.joints.filter(j => !joints.some(generated => generated.id === j.id));
     d.joints.push(...joints);
     d.hardware.push(...hw);
   });

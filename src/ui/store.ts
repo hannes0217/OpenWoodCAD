@@ -4,6 +4,7 @@ import { uid } from '../core/math';
 import { emptyDocument, type OwcDocument } from '../core/model';
 import { validateDocument } from '../core/validate';
 import { addPoint, loadProject, saveProject } from './projects';
+import type { PlaneChoice } from './precision';
 import { readCadSettings, type CadSettings } from './cadSettings';
 import type { SelectionFilter } from './selection';
 
@@ -15,6 +16,7 @@ export interface AppState {
   selectionFilter:SelectionFilter;
   visibilityOverrides:Record<string,boolean>;
   isolatedIds:string[]|null;
+  jointPreview: { base: OwcDocument; evaluation: Evaluated; ids: string[]; showContext: boolean } | null;
   contextMenu:{x:number;y:number;ids:string[];source?:'selection'}|null;
   contextPreview:string|null;
   cad: CadSettings;
@@ -41,7 +43,7 @@ export interface AppState {
   dirty: boolean;
   fileName: string | null;
   toast: { text: string; kind: 'info' | 'error' } | null;
-  dialog: null | { type: 'insert' } | { type: 'about' } | { type: 'joint'; a: string; b: string } | { type: 'shortcuts' } | { type: 'projects' };
+  dialog: null | { type: 'insert' } | { type: 'about' } | { type: 'joint'; a: string; b: string; id?: string } | { type: 'shortcuts' } | { type: 'projects' };
   /** Chosen entry: furniture, carpentry or free drawing. */
   mode: 'furniture' | 'carpentry' | 'free' | null;
   tourStep: number | null;
@@ -53,6 +55,8 @@ export interface AppState {
   beamMaterial: string;
   panelThickness: number;
   panelMaterial: string;
+  workPlane: PlaneChoice;
+  toolDraft: { input: string; points: number; error: boolean; snap: string };
   workZ: number;
   snap: number;
 }
@@ -94,7 +98,7 @@ function loadPrefs(): Partial<AppState> {
 const browserLang: Lang = typeof navigator !== 'undefined' && !navigator.language?.startsWith('de') ? 'en' : 'de';
 
 let state: AppState = {
-  selectionFilter:'all',visibilityOverrides:{},isolatedIds:null,contextMenu:null,contextPreview:null,
+  jointPreview:null,selectionFilter:'all',visibilityOverrides:{},isolatedIds:null,contextMenu:null,contextPreview:null,
   cad: readCadSettings(null),
   doc: loadAutosave() ?? emptyDocument(),
   projectId: (() => { try { return localStorage.getItem(LAST_KEY) ?? uid('prj'); } catch { return uid('prj'); } })(),
@@ -125,6 +129,8 @@ let state: AppState = {
   beamMaterial: 'kvh_c24',
   panelThickness: 19,
   panelMaterial: 'chip19_white',
+  workPlane: 'auto',
+  toolDraft: { input: '', points: 0, error: false, snap: '' },
   workZ: 0,
   snap: 10,
   ...loadPrefs(),
@@ -245,7 +251,7 @@ export async function switchProject(id: string, doc: OwcDocument):Promise<boolea
   const initialDoc=state.doc,initialId=state.projectId;
   await flushPersistence();
   if(state.doc!==initialDoc || state.projectId!==initialId)return false;
-  setState({ projectId: id, doc, past: [], future: [], selection: [], dirty: false, fileName: null,tool:'select',gizmoMode:'none',issueIds:[],hover:null,openGroups:{},selectionFilter:'all',visibilityOverrides:{},isolatedIds:null,contextMenu:null,contextPreview:null });
+  setState({ projectId: id, doc, past: [], future: [], selection: [], dirty: false, fileName: null,tool:'select',gizmoMode:'none',issueIds:[],hover:null,openGroups:{},jointPreview:null,selectionFilter:'all',visibilityOverrides:{},isolatedIds:null,contextMenu:null,contextPreview:null });
   lastPointAt = 0;
   try { localStorage.setItem(LAST_KEY, id); } catch { /* ignore */ }
   scheduleSave();return true;
@@ -267,7 +273,7 @@ export function updateDoc(fn: (d: OwcDocument) => void): void {
 
 /** Replace the document (load/new) – clears history. */
 export function replaceDoc(doc: OwcDocument, fileName: string | null = null): void {
-  setState({ doc, past: [], future: [], selection: [], dirty: false, fileName,tool:'select',gizmoMode:'none',issueIds:[],hover:null,openGroups:{},selectionFilter:'all',visibilityOverrides:{},isolatedIds:null,contextMenu:null,contextPreview:null });
+  setState({ doc, past: [], future: [], selection: [], dirty: false, fileName,tool:'select',gizmoMode:'none',issueIds:[],hover:null,openGroups:{},jointPreview:null,selectionFilter:'all',visibilityOverrides:{},isolatedIds:null,contextMenu:null,contextPreview:null });
   scheduleSave();
 }
 

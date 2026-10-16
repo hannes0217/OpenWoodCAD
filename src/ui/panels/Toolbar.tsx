@@ -1,3 +1,4 @@
+import { PrecisionControls } from '../components/PrecisionControls';
 import { useState } from 'react';
 import { MaterialSelect, NumberInput } from '../components/Field';
 import { useT } from '../i18n';
@@ -81,7 +82,7 @@ export function ModelToolbar() {
       </div>
       {hasDrawers && (
         <div className="tb-group">
-          <TB on={s.drawerOpen > 0.5} onClick={() => setState({ drawerOpen: s.drawerOpen > 0.5 ? 0 : 1, openGroups: {} })} icon="⇲" label={s.drawerOpen > 0.5 ? (de ? 'Alle schließen' : 'Close all') : (de ? 'Alle öffnen' : 'Open all')} tip={de ? 'Alle Schubkästen auf/zu – einzelne per Doppelklick auf die Front' : 'Open/close all drawers – single ones by double-clicking the front'} />
+          <TB on={s.drawerOpen > 0.5} onClick={() => setState({ drawerOpen: s.drawerOpen > 0.5 ? 0 : 1, openGroups: {} })} icon="⇲" label={s.drawerOpen > 0.5 ? (de ? 'Alle schließen' : 'Close all') : (de ? 'Alle öffnen' : 'Open all')} tip={de ? 'Alle Schubkästen/Türen auf/zu – einzelne per Doppelklick auf die Front' : 'Open/close all drawers/doors – single ones by double-clicking the front'} />
         </div>
       )}
       {(s.tool === 'rect' || s.tool === 'circle' || s.tool === 'poly') && (
@@ -98,13 +99,12 @@ export function ModelToolbar() {
           <span>{t('common.section')}</span>
           <NumberInput value={s.beamSection[0]} min={10} width={70} onCommit={(v) => setState({ beamSection: [v, s.beamSection[1]] })} />×
           <NumberInput value={s.beamSection[1]} min={10} width={70} onCommit={(v) => setState({ beamSection: [s.beamSection[0], v] })} />
-          <span>{de ? 'Höhe' : 'Height'}</span>
-          <NumberInput value={s.workZ} step={10} width={80} unit="mm" onCommit={(v) => setState({ workZ: v })} />
           <span>{de ? 'Raster' : 'Grid'}</span>
           <NumberInput value={s.snap} min={1} width={60} unit="mm" onCommit={(v) => setState({ snap: v })} />
           <MaterialSelect value={s.beamMaterial} catalog={ev.catalog} category="timber" onChange={(m) => setState({ beamMaterial: m })} />
         </div>
       )}
+      <PrecisionControls/>
     </div>
   );
 }

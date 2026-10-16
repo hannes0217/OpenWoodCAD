@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { materialName, type Catalog } from '../../core/catalog';
+import { parseMeasure } from '../precision';
 import { getState } from '../store';
 
 /** Number input that commits on blur / Enter (one undo step per edit). */
@@ -7,7 +8,8 @@ export function NumberInput({ value, onCommit, min, max, step = 1, unit, disable
   const [text, setText] = useState(String(value));
   useEffect(() => setText(String(Math.round(value * 1000) / 1000)), [value]);
   const commit = () => {
-    const v = Number(text.replace(',', '.'));
+    let v: number;
+    try { v = parseMeasure(text, unit === '°' ? 'angle' : 'length'); } catch { setText(String(value)); return; }
     if (!Number.isFinite(v)) return setText(String(value));
     const c = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v));
     if (c !== value) onCommit(c);
