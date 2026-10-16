@@ -1,4 +1,5 @@
 import { catalogFor, type Catalog } from './catalog';
+import { groupFrame, groupPath, transformMotion } from './assemblies';
 import { GENERATORS } from './generators';
 import { withDefaults, type GeneratorOutput } from './generators/types';
 import { applyJoint } from './joints';
@@ -7,6 +8,7 @@ import type { Element, HardwareUse, Joint, Msg, OwcDocument, Processing } from '
 import type { StaticSystem } from './statics/model';
 
 export interface EvalElement extends Element {
+  assemblyPath?: string[];
   /** Explicit + joint-derived processings in local coordinates. */
   all: Processing[];
   /** Position number (identical parts share it). */
@@ -25,13 +27,13 @@ export interface Evaluated {
 }
 
 function transformElement(e: Element, f: Frame): Element {
-  return { ...e, frame: composeFrame(f, e.frame) };
+  return { ...e, frame: composeFrame(f, e.frame), motion:transformMotion(e.motion,f) };
 }
 
 /** Run generators and joints. Pure function of the document. */
 export function evaluate(doc: OwcDocument): Evaluated {
   const catalog = catalogFor(doc);
-  const elements: Element[] = doc.elements.map((e) => ({ ...e, processings: [...e.processings] }));
+  const elements: (Element & {assemblyPath?:string[]})[] = doc.elements.map(e=>({...transformElement(e,groupFrame(doc,e.groupId)),assemblyPath:groupPath(doc,e.groupId),hidden:e.hidden||groupPath(doc,e.groupId).some(id=>doc.groups.find(g=>g.id===id)?.hidden),processings:[...e.processings]}));
   const joints: Joint[] = [...doc.joints];
   const hardware: HardwareUse[] = [...doc.hardware];
   const warnings: Msg[] = [];
@@ -52,8 +54,10 @@ export function evaluate(doc: OwcDocument): Evaluated {
       warnings.push({ key: 'warn.generatorFailed', args: { name: g.name, error: String((err as Error).message ?? err) } });
       continue;
     }
-    for (const e of outp.elements) elements.push({ ...transformElement(e, g.frame), hidden: e.hidden || g.hidden, generator: g.id });
-    joints.push(...outp.joints);
+    const assemblyPath=groupPath(doc,g.groupId),frame=composeFrame(groupFrame(doc,g.groupId),g.frame);
+    for (const e of outp.elements) elements.push({ ...transformElement(e, frame), assemblyPath, hidden: e.hidden || g.hidden || assemblyPath.some(id=>doc.groups.find(g=>g.id===id)?.hidden), generator: g.id });
+    // Explicit entries with the same stable ID override generator defaults.
+    joints.push(...outp.joints.filter(j => !doc.joints.some(override => override.id === j.id)));
     hardware.push(...outp.hardware);
     warnings.push(...outp.warnings);
     notes.push(...outp.notes);
@@ -64,6 +68,7 @@ export function evaluate(doc: OwcDocument): Evaluated {
   const byId = new Map(elements.map((e) => [e.id, e]));
   const derived = new Map<string, Processing[]>();
   for (const j of joints) {
+    if (j.suppressed) continue;
     const a = byId.get(j.a);
     const b = byId.get(j.b);
     if (!a || !b) {
@@ -79,7 +84,7 @@ export function evaluate(doc: OwcDocument): Evaluated {
     warnings.push(...res.warnings);
   }
 
-  const evals: EvalElement[] = elements.map((e) => ({ ...e, all: [...e.processings, ...(derived.get(e.id) ?? [])], pos: 0 }));
+  const evals: EvalElement[] = elements.map((e) => ({ ...e, all: [...e.processings.filter(p=>!p.suppressed), ...(derived.get(e.id) ?? [])], pos: 0 }));
   assignPositions(evals);
   return { elements: evals, joints, hardware, warnings, notes, mounting, statics, catalog };
 }

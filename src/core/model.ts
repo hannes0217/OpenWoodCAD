@@ -6,7 +6,7 @@ import type { Frame, Plane, Vec3 } from './math';
 // =====================================================================
 
 export const FORMAT = 'openwoodcad';
-export const FORMAT_VERSION = 1;
+export const FORMAT_VERSION = 4;
 
 export interface Localized {
   de: string;
@@ -56,7 +56,7 @@ export interface Element {
   /** Set for elements created by a generator. */
   generator?: string;
   /** Moves together with other parts of the same group in the 3D view (drawers). */
-  motion?: { group: string; dir: Vec3; travel: number };
+  motion?: { group: string; dir: Vec3; travel: number; rotation?: { pivot: Vec3; axis: Vec3; angle: number } };
   /** Free key/value data (e.g. assembly hints). */
   tags?: Record<string, string>;
 }
@@ -94,6 +94,8 @@ export type ProcessingType =
 
 interface ProcBase {
   id: string;
+  /** A disabled explicit operation is retained in the editable feature tree. */
+  suppressed?: boolean;
   type: ProcessingType;
   /** Joint that produced this processing (derived processings only). */
   jointId?: string;
@@ -151,6 +153,8 @@ export type ParamValue = number | string | boolean;
 
 export interface Joint {
   id: string;
+  /** Suppression persists an override of a generator-provided joint. */
+  suppressed?: boolean;
   type: JointType;
   /** Element that is processed first / the "incoming" member. */
   a: string;
@@ -170,6 +174,7 @@ export interface GeneratorInstance {
   frame: Frame;
   params: Record<string, ParamValue>;
   hidden?: boolean;
+  groupId?: string;
 }
 
 // ------------------------------------------------------------------ misc
@@ -179,6 +184,8 @@ export interface Group {
   name: string;
   parent?: string;
   hidden?: boolean;
+  /** Local placement relative to parent; absent in legacy documents = identity. */
+  frame?: Frame;
 }
 
 export interface HardwareUse {
@@ -229,6 +236,16 @@ export interface Settings {
 /** User price overrides by catalog id. */
 export type PriceOverrides = Record<string, number>;
 
+export interface DrawingPointRef { elementId?: string; corner: number }
+export interface DrawingDimension { id: string; a: DrawingPointRef; b: DrawingPointRef; orientation: 'h' | 'v' | 'aligned'; offset: number }
+export interface DrawingView {
+  id: string; title: string; view: 'front' | 'side' | 'top';
+  sectionOffset?: number;
+  /** Window in unscaled view coordinates, v positive upwards. */
+  detail?: { u: number; v: number; width: number; height: number };
+  dimensions: DrawingDimension[];
+}
+
 export interface OwcDocument {
   format: typeof FORMAT;
   version: number;
@@ -237,6 +254,7 @@ export interface OwcDocument {
   joints: Joint[];
   generators: GeneratorInstance[];
   groups: Group[];
+  drawingViews?: DrawingView[];
   hardware: HardwareUse[];
   prices: PriceOverrides;
   /** User-defined catalog additions. */

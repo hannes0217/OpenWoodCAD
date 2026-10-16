@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { deleteSelection, duplicateSelection } from '../actions';
+import { groupSelection, dissolveSelection } from '../assemblyActions';
 import { useT } from '../i18n';
 import { resolveSelection } from '../selection';
 import { setState, useApp, useEvaluated } from '../store';
@@ -49,6 +50,8 @@ export function ModelContextMenu() {
   {button('cad.move', () => setState({ tool: 'select', gizmoMode: 'translate' }), !has, 'W')}
   {button('cad.rotate', () => setState({ tool: 'select', gizmoMode: 'rotate' }), !has, 'R')}
   {button('menu.duplicate', () => duplicateSelection(), !has, 'Ctrl+D')}
+  {button('assembly.create', groupSelection, !has)}
+  {selection.some(key=>key.startsWith('group:'))&&button('assembly.dissolve',dissolveSelection)}
   {button('menu.joint', () => setState({ dialog: { type: 'joint', a: ids[0], b: ids[1] } }), ids.length !== 2)}
   {button('cad.fitSelection', () => viewportFitIds(ids), !has)}
   {button('context.isolate', isolateSelection, !has)}

@@ -1,52 +1,25 @@
+import { copyObjects, groupPath, movableRoots, objectFor, objectWorldFrame, setObjectWorldFrame } from '../../core/assemblies';
+import { resolveSelection } from '../selection';
 import { useState } from 'react';
 import { elementAABB } from '../../core/elements';
-import { DEG, aabbUnion, mirrorFrame, rotateFrame, uid, type AABB, type Frame, type Vec3 } from '../../core/math';
+import { DEG, aabbUnion, mirrorFrame, rotateFrame, type AABB, type Frame, type Vec3 } from '../../core/math';
 import { NumberInput, Section } from '../components/Field';
 import { evaluated, getState, setState, updateDoc, useApp } from '../store';
 
-interface Targets {
-  gens: string[];
-  els: string[];
-}
+interface Targets { keys:string[] }
 
-/** Resolve the selection to movable things: generators and free elements. */
-export function selectionTargets(): Targets {
-  const ev = evaluated();
-  const gens = new Set<string>();
-  const els: string[] = [];
-  for (const id of getState().selection) {
-    if (id.startsWith('gen:')) gens.add(id.slice(4));
-    else if (!id.includes(':')) {
-      const e = ev.elements.find((x) => x.id === id);
-      if (e?.generator) gens.add(e.generator);
-      else if (e) els.push(e.id);
-    }
-  }
-  return { gens: [...gens], els };
+/** Movable hierarchy roots, excluding descendants of another selected assembly. */
+export function selectionTargets():Targets {
+  return {keys:movableRoots(getState().doc,evaluated(),getState().selection)};
 }
-
-function boundsOf(t: Targets): AABB | null {
-  const ev = evaluated();
-  let box: AABB | null = null;
-  for (const e of ev.elements) {
-    if (!(t.els.includes(e.id) || (e.generator && t.gens.includes(e.generator)))) continue;
-    const b = elementAABB(e);
-    box = box ? aabbUnion(box, b) : b;
-  }
+function boundsOf(targets:Targets):AABB|null {
+  const ev=evaluated(),ids=new Set(resolveSelection(ev,targets.keys));let box:AABB|null=null;
+  for(const part of ev.elements)if(ids.has(part.id)){const b=elementAABB(part);box=box?aabbUnion(box,b):b;}
   return box;
 }
-
-function boundsOfOne(kind: 'gen' | 'el', id: string): AABB | null {
-  return boundsOf(kind === 'gen' ? { gens: [id], els: [] } : { gens: [], els: [id] });
+function applyFrames(targets:Targets,fn:(frame:Frame)=>Frame) {
+  updateDoc(doc=>{const frames=targets.keys.map(key=>({key,frame:fn(objectWorldFrame(doc,key))}));for(const item of frames)setObjectWorldFrame(doc,item.key,item.frame);});
 }
-
-function applyFrames(t: Targets, fn: (f: Frame) => Frame) {
-  updateDoc((d) => {
-    for (const g of d.generators) if (t.gens.includes(g.id)) g.frame = fn(g.frame);
-    for (const e of d.elements) if (t.els.includes(e.id)) e.frame = fn(e.frame);
-  });
-}
-
 export function TransformPanel() {
   const lang = useApp((s) => s.lang);
   useApp((s) => s.selection);
@@ -56,7 +29,7 @@ export function TransformPanel() {
   const [arr, setArr] = useState<{ n: number; d: Vec3 }>({ n: 3, d: [600, 0, 0] });
   const [mirrorCopy, setMirrorCopy] = useState(true);
   const t = selectionTargets();
-  if (!t.gens.length && !t.els.length) return null;
+  if (!t.keys.length) return null;
 
   const move = () => applyFrames(t, (f) => ({ ...f, o: [f.o[0] + mv[0], f.o[1] + mv[1], f.o[2] + mv[2]] }));
   const rotate = (deg: number) => {
@@ -74,62 +47,31 @@ export function TransformPanel() {
     // As a copy, mirror at the far face so the copy sits next to the original.
     if (mirrorCopy) p[axis] = b.max[axis];
     const plane = { p, n };
-    const newSel: string[] = [];
-    updateDoc((d) => {
-      for (const g of [...d.generators]) {
-        if (!t.gens.includes(g.id)) continue;
-        if (mirrorCopy) { const id = uid('g'); d.generators.push({ ...structuredClone(g), id, name: `${g.name} (S)`, frame: mirrorFrame(g.frame, plane) }); newSel.push(`gen:${id}`); }
-        else g.frame = mirrorFrame(g.frame, plane);
-      }
-      for (const e of [...d.elements]) {
-        if (!t.els.includes(e.id)) continue;
-        if (mirrorCopy) { const id = uid('b'); d.elements.push({ ...structuredClone(e), id, frame: mirrorFrame(e.frame, plane) }); newSel.push(id); }
-        else e.frame = mirrorFrame(e.frame, plane);
-      }
+    let newSel:string[]=[];
+    const ev=evaluated();
+    updateDoc(doc=>{
+      const roots=mirrorCopy?copyObjects(doc,ev,t.keys,[0,0,0]):t.keys;
+      // Reflection also reflects each nested member placement; a rigid root rotation is insufficient.
+      const keys=[...doc.groups.map(g=>`group:${g.id}`),...doc.generators.map(g=>`gen:${g.id}`),...doc.elements.map(e=>e.id)]
+        .filter(key=>roots.includes(key)||groupPath(doc,objectFor(doc,key)?.parent).some(id=>roots.includes(`group:${id}`)))
+        .sort((a,b)=>groupPath(doc,objectFor(doc,a)?.parent).length-groupPath(doc,objectFor(doc,b)?.parent).length);
+      const frames=keys.map(key=>({key,frame:mirrorFrame(objectWorldFrame(doc,key),plane)}));
+      for(const item of frames)setObjectWorldFrame(doc,item.key,item.frame);
+      if(mirrorCopy)newSel=roots;
     });
-    if (newSel.length) setState({ selection: newSel });
+    if(newSel.length)setState({selection:newSel});
+  };  const array=()=>{
+    const ev=evaluated();let selection:string[]=[];
+    updateDoc(doc=>{for(let i=1;i<arr.n;i++)selection.push(...copyObjects(doc,ev,t.keys,[arr.d[0]*i,arr.d[1]*i,arr.d[2]*i]));});
+    setState({selection:[...getState().selection,...selection]});
   };
-  const array = () => {
-    const newSel: string[] = [];
-    updateDoc((d) => {
-      for (let i = 1; i < arr.n; i++) {
-        const off: Vec3 = [arr.d[0] * i, arr.d[1] * i, arr.d[2] * i];
-        const shift = (f: Frame): Frame => ({ ...f, o: [f.o[0] + off[0], f.o[1] + off[1], f.o[2] + off[2]] });
-        for (const g of d.generators.filter((x) => t.gens.includes(x.id))) { const id = uid('g'); d.generators.push({ ...structuredClone(g), id, name: `${g.name} (${i + 1})`, frame: shift(g.frame) }); newSel.push(`gen:${id}`); }
-        for (const e of d.elements.filter((x) => t.els.includes(x.id))) { const id = uid('b'); d.elements.push({ ...structuredClone(e), id, frame: shift(e.frame) }); newSel.push(id); }
-      }
-    });
-    setState({ selection: [...getState().selection, ...newSel] });
-  };
-  /** Align every selected item to the first one. */
-  const align = (axis: 0 | 1 | 2, mode: 'min' | 'mid' | 'max') => {
-    const sel = getState().selection;
-    const items: { kind: 'gen' | 'el'; id: string }[] = [];
-    const ev = evaluated();
-    for (const id of sel) {
-      if (id.startsWith('gen:')) items.push({ kind: 'gen', id: id.slice(4) });
-      else {
-        const e = ev.elements.find((x) => x.id === id);
-        if (e?.generator) { if (!items.some((i) => i.kind === 'gen' && i.id === e.generator)) items.push({ kind: 'gen', id: e.generator }); }
-        else if (e) items.push({ kind: 'el', id });
-      }
-    }
-    if (items.length < 2) return;
-    const ref = boundsOfOne(items[0].kind, items[0].id)!;
-    const val = (b: AABB) => (mode === 'min' ? b.min[axis] : mode === 'max' ? b.max[axis] : (b.min[axis] + b.max[axis]) / 2);
-    const target = val(ref);
-    const deltas = items.slice(1).map((it) => ({ it, d: target - val(boundsOfOne(it.kind, it.id)!) }));
-    updateDoc((doc) => {
-      for (const { it, d } of deltas) {
-        const obj = it.kind === 'gen' ? doc.generators.find((g) => g.id === it.id) : doc.elements.find((e) => e.id === it.id);
-        if (!obj) continue;
-        const o = [...obj.frame.o] as Vec3;
-        o[axis] += d;
-        obj.frame = { ...obj.frame, o };
-      }
-    });
-  };
-  const ax = ['X', 'Y', 'Z'];
+  const align=(axis:0|1|2,mode:'min'|'mid'|'max')=>{
+    const items=t.keys.map(key=>({key,box:boundsOf({keys:[key]})})).filter((item):item is {key:string;box:AABB}=>!!item.box);
+    if(items.length<2)return;
+    const value=(box:AABB)=>mode==='min'?box.min[axis]:mode==='max'?box.max[axis]:(box.min[axis]+box.max[axis])/2;
+    const target=value(items[0].box);
+    updateDoc(doc=>{for(const item of items.slice(1)){const f=objectWorldFrame(doc,item.key),o=[...f.o] as Vec3;o[axis]+=target-value(item.box);setObjectWorldFrame(doc,item.key,{...f,o});}});
+  };  const ax = ['X', 'Y', 'Z'];
   const multi = getState().selection.length > 1;
   return (
     <Section title={de ? 'Transformieren' : 'Transform'} open={false}>

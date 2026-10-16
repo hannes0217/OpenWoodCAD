@@ -368,3 +368,28 @@ button:focus-visible,select:focus-visible,input:focus-visible,.tree-item:focus-v
  .cad-workspace-bar select.selection-filter { flex:1; }
  .visibility-banner { max-width:calc(100% - 165px); left:7px; }
 }
+
+.precision-controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; flex-basis:100%; border-top:1px solid var(--line); padding:5px 8px; }
+.precision-controls label { display:flex; align-items:center; gap:5px; font-size:11px; }
+.precision-controls input,.precision-controls select { min-width:0; border:1px solid var(--line); border-radius:4px; background:var(--panel); padding:4px; }
+.precision-expression input { width:190px; }
+.precision-controls input[aria-invalid=true] { border-color:var(--danger); }
+.precision-controls button { border:1px solid var(--line); border-radius:4px; padding:4px 8px; background:var(--panel); cursor:pointer; }
+.precision-controls button:disabled { opacity:.4; cursor:default; }
+
+.cad-orbit-buttons { display:flex; gap:3px; }
+.cad-orbit-buttons button { flex:1; }
+
+.joint-workbench { position:fixed; z-index:75; right:18px; top:95px; bottom:65px; width:min(350px,calc(100vw - 24px)); overflow:auto; background:var(--panel); border:1px solid var(--line); border-radius:8px; box-shadow:0 12px 35px #0005; padding:12px; }
+.joint-workbench .btn-row { margin-top:12px; }
+
+.drawing-editor { border:1px solid var(--line); padding:10px; margin-bottom:12px; border-radius:6px; }
+.drawing-editor summary { cursor:pointer; font-weight:600; }
+.drawing-editor fieldset { border:1px solid var(--line); border-radius:5px; padding:10px; margin:10px 0; display:flex; align-items:center; flex-wrap:wrap; gap:10px; }
+.drawing-editor label { display:inline-flex; align-items:center; flex-wrap:wrap; gap:5px; }
+.drawing-editor select { max-width:260px; }
+.drawing-dimension { flex-basis:100%; padding:8px 0; border-top:1px solid var(--line); display:flex; flex-wrap:wrap; gap:7px; align-items:center; }
+.assembly-tree-actions { display:flex; flex-wrap:wrap; gap:6px; padding:6px 8px; }
+.assembly-tree-actions .btn { font-size:11px; padding:5px 7px; }
+.tree [role="treeitem"] { min-height:31px; }
+.tree [role="treeitem"]:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }

@@ -1,15 +1,22 @@
 import type { EvalElement, Evaluated } from '../core/evaluate';
 import type { Joint } from '../core/model';
+import { parseProcessingKey } from '../core/references';
 export type SelectionFilter = 'all' | 'beam' | 'panel';
 export interface ViewVisibility {
     visibilityOverrides: Record<string, boolean>;
     isolatedIds: string[] | null;
 }
-export function selectedElementIds(elements: Pick<EvalElement, 'id' | 'generator'>[], joints: Pick<Joint, 'id' | 'a' | 'b'>[], selection: string[]): string[] {
+export function selectedElementIds(elements: Pick<EvalElement, 'id' | 'generator' | 'assemblyPath'>[], joints: Pick<Joint, 'id' | 'a' | 'b'>[], selection: string[]): string[] {
     const known = new Set(elements.map(e => e.id)), out = new Set<string>();
     for (const id of selection) {
         if (known.has(id))
             out.add(id);
+        else if (id.startsWith('group:')) {
+            for(const element of elements)if(element.assemblyPath?.includes(id.slice(6)))out.add(element.id);
+        }
+        else if(parseProcessingKey(id)) {
+            const ref=parseProcessingKey(id)!;if(known.has(ref.elementId))out.add(ref.elementId);
+        }
         else if (id.startsWith('gen:')) {
             for (const e of elements)
                 if (e.generator === id.slice(4))

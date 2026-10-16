@@ -25,7 +25,8 @@ export function sheetsToDxf(sheets: DrawnSheet[]): string {
     const Y = (y: number) => s.h - y;
     for (const p of s.prims) {
       if (p.text) {
-        g(0, 'TEXT'); g(8, 'TEXT'); g(10, X(p.text.x)); g(20, Y(p.text.y)); g(30, 0); g(40, p.text.h); g(1, p.text.s.replace(/\n/g, ' '));
+        g(0, 'TEXT'); g(8, 'TEXT'); g(10, X(p.text.x)); g(20, Y(p.text.y)); g(30, 0); g(40, p.text.h); g(1, p.text.s.replace(/[\x00-\x1f]/g, ' '));
+        if (p.text.rotate) g(50, ((-p.text.rotate%360)+360)%360);
         const h = p.text.anchor === 'middle' ? 1 : p.text.anchor === 'end' ? 2 : 0;
         if (h) { g(72, h); g(11, X(p.text.x)); g(21, Y(p.text.y)); g(31, 0); }
         continue;

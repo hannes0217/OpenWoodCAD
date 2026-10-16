@@ -1,5 +1,14 @@
 // Translations for generator parameters, notes and warnings.
 export const genDe: Record<string, string> = {
+  'fitting.library':'Beschlagbibliothek / Bohrmuster', 'fitting.cup':'Topfbohrung', 'fitting.fixing':'Befestigungsraster', 'fitting.plate':'Montageplatte (Planungswerte)', 'fitting.source':'Herstellerunterlage: Topf-/Befestigungsmuster', 'fitting.centres':'Bohrabstand',
+  'gen.schrank':'Schrank mit Türen', 'gen.schrank.desc':'Korpus mit einer oder zwei Türen, Topfbandbohrungen, Griffen und Fachböden',
+  'param.doors':'Anzahl Türen', 'param.hingeCount':'Topfbänder je Tür', 'param.doorGap':'Türfuge', 'param.frontGap':'Abstand Front/Korpus', 'param.handing':'Anschlag bei einer Tür', 'param.hingePattern':'Beschlagmuster', 'param.cupSetback':'Topfbohrung: Randabstand', 'param.plateFront':'Montageplatte: Abstand vorn', 'param.handle':'Griff',
+  'opt.left':'links', 'opt.right':'rechts', 'opt.cup35_45':'Topfband Ø35, Muster 45/9,5 (Planung)', 'opt.knob':'Knopf', 'opt.handle_96':'Griff 96 mm', 'opt.handle_128':'Griff 128 mm', 'opt.handle_160':'Griff 160 mm',
+  'warn.schrank.layout':'Tür-/Beschlagaufteilung passt nicht: Materialstärken, Türgröße und Bandabstände prüfen.',
+  'note.schrank.fittings':'Beschlagmuster zur Planung: Ø35 × 13 mm, Befestigung 45/9,5. Pilot-/Montagebohrungen und erforderliche Bandanzahl mit dem gewählten Herstellerbeschlag, Montageplatte und Türgewicht abgleichen.',
+  'note.schrank.motion':'Türöffnung ist eine vereinfachte Drehvorschau; keine exakte Mehrgelenkkinematik oder Prüfung gegen angrenzende Möbel/Wände.',
+  'note.schrank.hinge':'Topfband {n}: Höhe ab Unterkante Korpus',
+
   'gen.regal': 'Regal', 'gen.regal.desc': 'Bücher- oder Wandregal mit festen oder verstellbaren Böden (Lochreihen), Mittelwänden, Sockel',
   'gen.werkbank': 'Werkbank', 'gen.werkbank.desc': 'Massives Untergestell mit Zapfenverbindungen, mehrlagige Arbeitsplatte, Ablage',
   'gen.wand': 'Holzrahmenwand', 'gen.wand.desc': 'Schwelle, Rähm, Ständer im Raster, Fenster/Tür mit Sturz, OSB-Beplankung',
@@ -38,6 +47,15 @@ export const genDe: Record<string, string> = {
 };
 
 export const genEn: Record<string, string> = {
+  'fitting.library':'Fitting library / drilling patterns', 'fitting.cup':'Cup bore', 'fitting.fixing':'Fixing pattern', 'fitting.plate':'Mounting plate (planning values)', 'fitting.source':'Manufacturer sheet: cup/fixing pattern', 'fitting.centres':'Hole centres',
+  'gen.schrank':'Cabinet with doors', 'gen.schrank.desc':'Carcass with one or two doors, concealed hinge bores, handles and shelves',
+  'param.doors':'Number of doors', 'param.hingeCount':'Hinges per door', 'param.doorGap':'Door gap', 'param.frontGap':'Front/carcass clearance', 'param.handing':'Single-door handing', 'param.hingePattern':'Fitting pattern', 'param.cupSetback':'Cup bore: edge setback', 'param.plateFront':'Mounting plate: front setback', 'param.handle':'Handle',
+  'opt.left':'left', 'opt.right':'right', 'opt.cup35_45':'Ø35 hinge, 45/9.5 pattern (planning)', 'opt.knob':'Knob', 'opt.handle_96':'96 mm handle', 'opt.handle_128':'128 mm handle', 'opt.handle_160':'160 mm handle',
+  'warn.schrank.layout':'Door/fitting layout does not fit: check material thicknesses, door size and hinge spacing.',
+  'note.schrank.fittings':'Planning pattern: Ø35 × 13 mm, 45/9.5 fixing pattern. Verify pilot/plate bores and required hinge count against the chosen manufacturer hinge, mounting plate and door weight.',
+  'note.schrank.motion':'Door opening is a simplified rotation preview; no exact multi-link kinematics or collision check against neighbouring cabinets/walls.',
+  'note.schrank.hinge':'Hinge {n}: height above carcass bottom',
+
   'gen.regal': 'Shelf', 'gen.regal.desc': 'Bookcase or wall shelf with fixed or adjustable shelves (pin rows), dividers, plinth',
   'gen.werkbank': 'Workbench', 'gen.werkbank.desc': 'Solid base with mortise-and-tenon joints, laminated top, lower shelf',
   'gen.wand': 'Timber frame wall', 'gen.wand.desc': 'Sole plate, top plate, studs on a grid, window/door with header, OSB sheathing',

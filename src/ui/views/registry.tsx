@@ -10,7 +10,7 @@ type MenuItem = { label: string; action: () => void; shortcut?: string; disabled
 
 async function exportStep() {
   try {
-    const data = await geom.step(evaluated().elements.filter((e) => !e.hidden));
+    const data = await geom.step(evaluated().elements);
     download(`${safeName(getState().doc.project.name)}.step`, data, 'application/step');
   } catch (err) {
     toast(String(err), 'error');
@@ -19,7 +19,7 @@ async function exportStep() {
 
 async function exportStl() {
   try {
-    const data = await geom.stl(evaluated().elements.filter((e) => !e.hidden));
+    const data = await geom.stl(evaluated().elements);
     download(`${safeName(getState().doc.project.name)}.stl`, data, 'model/stl');
   } catch (err) {
     toast(String(err), 'error');

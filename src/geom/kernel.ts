@@ -50,6 +50,15 @@ function halfSpace(pl: Plane, size: number): Shape3D {
   return out;
 }
 
+/** Drawing-only half-space clipping. Source solids are never modified. */
+export function clipShape(shape: Shape3D, plane: Plane): Shape3D {
+  const box=shape.boundingBox;
+  const bounds=box.bounds;box.delete();
+  const radius=Math.max(...bounds.flatMap(p=>p.map((v,i)=>Math.abs(v-plane.p[i]))),1)*8+2000;
+  const tool=halfSpace(plane,radius);
+  try{return shape.cut(tool) as Shape3D;}finally{tool.delete();}
+}
+
 function boundsBox(e: Element, margin: number): Shape3D {
   return makeBox([-margin, -margin, -margin], [e.length + margin, e.width + margin, e.height + margin]);
 }

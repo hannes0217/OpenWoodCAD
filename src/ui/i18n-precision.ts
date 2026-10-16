@@ -1,0 +1,26 @@
+export const precisionDe: Record<string, string> = {
+  'precision.orbit': 'Ansicht ohne mittlere Maustaste drehen', 'precision.left': 'Nach links drehen', 'precision.right': 'Nach rechts drehen', 'precision.up': 'Nach oben drehen', 'precision.down': 'Nach unten drehen',
+  'precision.snap.end': 'Endpunkt', 'precision.snap.mid': 'Mittelpunkt', 'precision.snap.center': 'Zentrum', 'precision.snap.face': 'Fläche', 'precision.snap.edge': 'Kante', 'precision.snap.grid': 'Raster', 'precision.snap.axis': 'Achse', 'precision.snap.free': 'Frei / Maßeingabe',
+  'precision.plane': 'Arbeitsebene', 'precision.auto': 'Automatisch / Bauteilfläche',
+  'precision.offset': 'Ebenenversatz', 'precision.input': 'Maßausdruck',
+  'precision.example': 'Länge: 1,2m oder 600+2*19 · Länge@Winkel: 800@45° · Rechteck: 600x400',
+  'precision.apply': 'Übernehmen', 'precision.cancel': 'Abbrechen',
+  'precision.invalid': 'Ungültiges Maß. Positive Maße und passende Einheiten verwenden; Winkel mit @ nur bei Balken/Umriss.',
+  'precision.start': 'Zuerst einen Startpunkt im Modell wählen.', 'precision.edge': 'Kante',
+  'precision.snap': 'Fang', 'precision.grid': 'Raster', 'precision.finish': 'Umriss schließen',
+  'precision.polygon': 'Der Umriss benötigt mindestens drei verschiedene Punkte ohne Selbstüberschneidung und mit Fläche.',
+  'precision.planeHint': 'Ebenenwechsel verwirft nur die laufende Vorschau.',
+};
+export const precisionEn: Record<string, string> = {
+  'precision.orbit': 'Orbit without a middle mouse button', 'precision.left': 'Orbit left', 'precision.right': 'Orbit right', 'precision.up': 'Orbit up', 'precision.down': 'Orbit down',
+  'precision.snap.end': 'Endpoint', 'precision.snap.mid': 'Midpoint', 'precision.snap.center': 'Centre', 'precision.snap.face': 'Face', 'precision.snap.edge': 'Edge', 'precision.snap.grid': 'Grid', 'precision.snap.axis': 'Axis', 'precision.snap.free': 'Free / typed dimension',
+  'precision.plane': 'Work plane', 'precision.auto': 'Automatic / part face',
+  'precision.offset': 'Plane offset', 'precision.input': 'Dimension expression',
+  'precision.example': 'Length: 1.2m or 600+2*19 · length@angle: 800@45° · rectangle: 600x400',
+  'precision.apply': 'Apply', 'precision.cancel': 'Cancel',
+  'precision.invalid': 'Invalid dimension. Use positive dimensions and matching units; @ angles only for beams/outlines.',
+  'precision.start': 'Choose a start point in the model first.', 'precision.edge': 'Edge',
+  'precision.snap': 'Snap', 'precision.grid': 'Grid', 'precision.finish': 'Close outline',
+  'precision.polygon': 'The outline needs at least three distinct points, no self-intersections and a non-zero area.',
+  'precision.planeHint': 'Changing planes discards only the current preview.',
+};
