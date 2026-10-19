@@ -17,7 +17,7 @@ import type { SnapEdge, WorkPlane } from './precision';
 import { tools, type ViewApi } from './tools';
 import { getState, setState, subscribe, evaluated, type AppState } from './store';
 import { changeProjection, fitCamera, resizeCamera, VIEW_DIRECTIONS, type CadCamera, type ViewName } from './cameraMath';
-import { configureCadNavigation } from './navigation';
+import { configureCadNavigation,installNavigationRecovery } from './navigation';
 import { pickPartIds, resolveSelection, visibleElements } from './selection';
 import { beginDirectMove, commitDirectMove, commitRigidMove, directMoveDelta, type MoveTransaction, type MoveAxis } from './directMove';
 export type { ViewName } from './cameraMath';
@@ -41,6 +41,7 @@ class SceneView implements ViewApi {
   scene = new THREE.Scene();
   camera: CadCamera;
   controls: OrbitControls;
+  navigationRecovery:ReturnType<typeof installNavigationRecovery>|null=null;
   root = new THREE.Group();
   grid: THREE.GridHelper;
   raycaster = new THREE.Raycaster();
@@ -83,6 +84,7 @@ class SceneView implements ViewApi {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.15;
     this.controls.addEventListener('change', () => (this.dirty = true));
+    this.bindNavigationRecovery();
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x8a7a66, 1.4));
     const sun = new THREE.DirectionalLight(0xffffff, 1.6);
     sun.position.set(-3, -5, 8);
@@ -157,6 +159,11 @@ class SceneView implements ViewApi {
   configureNavigation() {
     configureCadNavigation(this.controls,getState().cad.navigation,getState().tool!=='select');
   }
+  private bindNavigationRecovery(){
+    this.navigationRecovery?.dispose();
+    this.navigationRecovery=installNavigationRecovery(this.controls,()=>this.resetOrbitTarget(this.controls.target.clone()));
+  }
+  cancelNavigation(){this.navigationRecovery?.cancel();}
   alignWorkPlane(plane:WorkPlane){
     this.cancelInteraction?.();
     const distance=this.root.children.length?this.camera.position.distanceTo(this.controls.target):1200,target=new THREE.Vector3(...plane.o);
@@ -185,6 +192,7 @@ class SceneView implements ViewApi {
     this.controls.enableDamping=true;this.controls.dampingFactor=.15;
     this.controls.target.copy(center);
     this.controls.addEventListener('change',() => {this.dirty=true;});
+    this.bindNavigationRecovery();
     this.configureNavigation();this.controls.update();
   }
 
@@ -198,6 +206,7 @@ class SceneView implements ViewApi {
   }
 
   dispose() {
+    this.navigationRecovery?.dispose();
     cancelAnimationFrame(this.frame);
     this.controls.dispose();
     this.renderer.dispose();
@@ -681,9 +690,10 @@ export default function Viewport() {
     let down: { x: number; y: number } | null = null;
     const el = view.renderer.domElement;
     const onDown = (e: PointerEvent) => {
+      if(e.button!==0&&direct)cancelDirect();
       view.configureNavigation();down = { x: e.clientX, y: e.clientY };
       const state=getState();
-      if(e.button!==0||e.ctrlKey||e.shiftKey||e.metaKey||state.tool!=='select'||!state.cad.directDrag||state.cad.navigation==='classic'||state.dialog||state.jointPreview||state.dimensionEdit||view.gizmo.axis)return;
+      if(e.button!==0||e.buttons!==1||e.ctrlKey||e.shiftKey||e.metaKey||state.tool!=='select'||!state.cad.directDrag||state.cad.navigation==='classic'||state.dialog||state.jointPreview||state.dimensionEdit||view.gizmo.axis)return;
       const hit=view.pickDetailed(e.clientX,e.clientY);if(!hit)return;
       const ev=evaluated(),selected=resolveSelection(ev,state.selection).includes(hit.id)&&movableRoots(state.doc,ev,state.selection).length?state.selection:[hit.id];
       const normal=view.camera.getWorldDirection(new THREE.Vector3());
@@ -773,7 +783,7 @@ export default function Viewport() {
       paintDirect();setState({directMove:{delta:direct.delta??[0,0,0],axis:direct.axis,blocked:direct.delta===null}});e.preventDefault();e.stopImmediatePropagation();
     };
     const onLost=(e:PointerEvent)=>{if(direct?.pointerId===e.pointerId)cancelDirect();if(e.type==='pointercancel'){view.cancelGizmo();refresh();}};
-    const onBlur=()=>{cancelDirect();view.cancelGizmo();refresh();};
+    const onBlur=()=>{cancelDirect();view.cancelGizmo();view.cancelNavigation();refresh();};
     view.cancelInteraction=onBlur;
     view.onMove = moveTarget;
     tools.attach(view);

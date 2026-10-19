@@ -6,7 +6,7 @@ import { cadCommands, filterCommands } from '../src/ui/commands';
 import { getState, setState } from '../src/ui/store';
 import { cadDe, cadEn } from '../src/ui/i18n-cad';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { configureCadNavigation } from '../src/ui/navigation';
+import { configureCadNavigation,installNavigationRecovery } from '../src/ui/navigation';
 
 /** Real OrbitControls pointer handling without a WebGL context. The event
  * target supplies only the canvas APIs that controls use, not a mock camera.
@@ -25,6 +25,31 @@ class ControlSurface extends EventTarget {
 }
 
 describe('CAD navigation gestures',()=>{
+ it('recovers interrupted real OrbitControls gestures and ignores completed or obsolete capture loss',async()=>{
+  const surface=new ControlSurface(),camera=new THREE.PerspectiveCamera(35,4/3,.1,100000);camera.up.set(0,0,1);camera.position.set(1000,-1200,800);
+  let controls:OrbitControls,recovery:ReturnType<typeof installNavigationRecovery>|undefined,resets=0;
+  const rebuild=()=>{
+   const target=controls?.target.clone()??new THREE.Vector3();
+   recovery?.dispose();controls?.dispose();controls=new OrbitControls(camera,surface as unknown as HTMLElement);controls.target.copy(target);
+   configureCadNavigation(controls,'solidworks',true);recovery=installNavigationRecovery(controls,()=>{resets++;rebuild();});
+  };
+  const down=()=>{const event=new Event('pointerdown');Object.assign(event,{button:1,pointerType:'mouse',pointerId:1,clientX:100,clientY:100,pageX:100,pageY:100,ctrlKey:false,metaKey:false,shiftKey:false});surface.dispatchEvent(event);};
+  rebuild();
+  for(let i=0;i<10;i++){camera.position.set(1000,-1200,800);controls!.update();surface.drag(1);}
+  surface.dispatchEvent(new Event('lostpointercapture'));await Promise.resolve();expect(resets).toBe(0);
+  down();surface.dispatchEvent(new Event('lostpointercapture'));await Promise.resolve();expect(resets).toBe(1);
+  const before=camera.position.clone();surface.drag(1);expect(camera.position.distanceTo(before)).toBeGreaterThan(1);
+  down();recovery!.cancel();expect(resets).toBe(2);
+  const resumed=camera.position.clone();surface.drag(1);expect(camera.position.distanceTo(resumed)).toBeGreaterThan(1);
+  down();surface.dispatchEvent(new Event('lostpointercapture'));recovery!.dispose();await Promise.resolve();expect(resets).toBe(2);
+  controls!.dispose();
+ });
+ it('keeps classic left-button drawing free of orbit without disabling modern camera gestures',()=>{
+  const surface=new ControlSurface(),camera=new THREE.PerspectiveCamera(35,4/3,.1,100000);camera.position.set(1000,-1200,800);
+  const controls=new OrbitControls(camera,surface as unknown as HTMLElement);
+  configureCadNavigation(controls,'classic',true);const before=camera.position.clone();surface.drag(0);expect(camera.position.distanceTo(before)).toBeLessThan(1e-8);
+  controls.dispose();
+ });
  it('uses SOLIDWORKS middle-button rotation and Ctrl+middle panning without inertial drift',()=>{
   const surface=new ControlSurface(),camera=new THREE.PerspectiveCamera(35,4/3,.1,100000);camera.up.set(0,0,1);camera.position.set(1000,-1200,800);
   const controls=new OrbitControls(camera,surface as unknown as HTMLElement),direction=()=>camera.position.clone().sub(controls.target).normalize();
@@ -32,9 +57,9 @@ describe('CAD navigation gestures',()=>{
   const before=direction();surface.drag(1);expect(direction().distanceTo(before)).toBeGreaterThan(.01);expect(controls.target.length()).toBeLessThan(1e-8);
   const orbit=direction();surface.drag(1,false,true);expect(controls.target.length()).toBeGreaterThan(1);expect(direction().distanceTo(orbit)).toBeLessThan(1e-8);
   const position=camera.position.clone();surface.drag(0);expect(camera.position.distanceTo(position)).toBeLessThan(1e-8);
-  configureCadNavigation(controls,'solidworks',true);const drawing=direction();surface.drag(1);expect(direction().distanceTo(drawing)).toBeLessThan(1e-8);controls.dispose();
+  configureCadNavigation(controls,'solidworks',true);const drawing=direction();surface.drag(1);expect(direction().distanceTo(drawing)).toBeGreaterThan(.01);const after=direction();surface.drag(0);expect(direction().distanceTo(after)).toBeLessThan(1e-8);controls.dispose();
  });
- it('reserves left drag for selection, pans with middle, orbits with Shift+middle and suppresses orbit while drawing',()=>{
+ it('reserves left drag for selection, pans with middle, orbits with Shift+middle and allows middle-button orbit while drawing',()=>{
   const surface=new ControlSurface(),camera=new THREE.PerspectiveCamera(35,4/3,.1,100000);camera.up.set(0,0,1);camera.position.set(1000,-1200,800);
   const controls=new OrbitControls(camera,surface as unknown as HTMLElement);
   const direction=()=>camera.position.clone().sub(controls.target).normalize();
@@ -44,7 +69,7 @@ describe('CAD navigation gestures',()=>{
   surface.drag(1);expect(controls.target.length()).toBeGreaterThan(1);expect(direction().distanceTo(initialDirection)).toBeLessThan(1e-8);
   const target=controls.target.clone(),before=direction();surface.drag(1,true);
   expect(controls.target.distanceTo(target)).toBeLessThan(1e-8);expect(direction().distanceTo(before)).toBeGreaterThan(.01);
-  configureCadNavigation(controls,'cad',true);const drawing=direction();surface.drag(1,true);expect(direction().distanceTo(drawing)).toBeLessThan(1e-8);
+  configureCadNavigation(controls,'cad',true);const drawing=direction();surface.drag(1,true);expect(direction().distanceTo(drawing)).toBeGreaterThan(.01);
   configureCadNavigation(controls,'classic',false);surface.drag(0);expect(direction().distanceTo(drawing)).toBeGreaterThan(.01);
   controls.dispose();
  });
