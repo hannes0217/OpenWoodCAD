@@ -2,14 +2,21 @@ import type { Evaluated } from './evaluate';
 import { elementCorners } from './elements';
 import { toWorld, type Vec3 } from './math';
 import type { OwcDocument, ProcessingType } from './model';
+import { sketchProfile, solveSketch } from './sketch';
 
 /** Semantic references deliberately never contain transient OCCT edge/face indices. */
 export type GeometryReference = { elementId:string;kind:'stockCorner';corner:number } |
+  {elementId:string;kind:'sketchPoint';pointId:string} |
   {elementId:string;kind:'processingOrigin';processingId:string;processingType:ProcessingType};
 export type ReferenceResult = {ok:true;point:Vec3}|{ok:false;reason:'partMissing'|'featureMissing'|'unsupported'};
 export function resolveGeometryReference(ev:Evaluated,ref:GeometryReference):ReferenceResult {
   const part=ev.elements.find(e=>e.id===ref.elementId);if(!part)return {ok:false,reason:'partMissing'};
   if(ref.kind==='stockCorner')return Number.isInteger(ref.corner)&&ref.corner>=0&&ref.corner<8?{ok:true,point:elementCorners(part)[ref.corner]}:{ok:false,reason:'unsupported'};
+  if(ref.kind==='sketchPoint'){
+    if(!part.sketch)return {ok:false,reason:'featureMissing'};
+    const solution=solveSketch(part.sketch),point=solution.sketch.points.find(p=>p.id===ref.pointId);if(!point)return {ok:false,reason:'featureMissing'};
+    const profile=sketchProfile(part.sketch,solution);return {ok:true,point:toWorld(part.frame,[point.x-profile.offset[0],point.y-profile.offset[1],0])};
+  }
   const proc=part.all.find(p=>p.id===ref.processingId&&p.type===ref.processingType);
   if(!proc)return {ok:false,reason:'featureMissing'};
   if(proc.geom==='drill')return {ok:true,point:toWorld(part.frame,proc.p)};
@@ -17,6 +24,7 @@ export function resolveGeometryReference(ev:Evaluated,ref:GeometryReference):Ref
   return {ok:false,reason:'unsupported'};
 }
 export const processingKey=(elementId:string,processingId:string)=>`proc:${encodeURIComponent(elementId)}|${encodeURIComponent(processingId)}`;
+export const sketchKey=(elementId:string)=>`sketch:${encodeURIComponent(elementId)}`;
 export function parseProcessingKey(key:string):{elementId:string;processingId:string}|null {
   if(!key.startsWith('proc:'))return null;
   const parts=key.slice(5).split('|');if(parts.length!==2)return null;
@@ -26,8 +34,9 @@ export interface DependencyNode {id:string;dependsOn:string[]}
 /** Explicit stock -> joint/operation -> finished-body graph, separate from Undo. */
 export function dependencyGraph(doc:OwcDocument,ev:Evaluated):DependencyNode[] {
   const nodes:DependencyNode[]=doc.groups.map(g=>({id:`group:${g.id}`,dependsOn:g.parent?[`group:${g.parent}`]:[]}));
+  nodes.push(...doc.elements.filter(e=>e.sketch).map(e=>({id:sketchKey(e.id),dependsOn:[]})));
   nodes.push(...doc.generators.map(g=>({id:`gen:${g.id}`,dependsOn:g.groupId?[`group:${g.groupId}`]:[]})));
-  for(const part of ev.elements)nodes.push({id:`part:${part.id}`,dependsOn:part.generator?[`gen:${part.generator}`]:part.groupId?[`group:${part.groupId}`]:[]});
+  for(const part of ev.elements)nodes.push({id:`part:${part.id}`,dependsOn:[...(part.generator?[`gen:${part.generator}`]:part.groupId?[`group:${part.groupId}`]:[]),...(part.sketch?[sketchKey(part.id)]:[])]});
   for(const joint of ev.joints.filter(j=>!j.suppressed))nodes.push({id:`joint:${joint.id}`,dependsOn:[`part:${joint.a}`,`part:${joint.b}`]});
   for(const part of ev.elements){
     let previous=`part:${part.id}`;

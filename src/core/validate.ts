@@ -4,6 +4,7 @@ import { evaluate } from './evaluate';
 import { JOINT_PARAMS } from './joints';
 import { groupPath } from './assemblies';
 import { dot, cross } from './math';
+import { validSketch, sketchProfile } from './sketch';
 
 // Strict validation and migration of documents loaded from files or storage.
 
@@ -27,6 +28,8 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
   2: () => {},
   // v4 interprets legacy groups as identity assemblies and adds operation suppression.
   3: () => {},
+  // v5 adds optional driving line profiles to free panel elements.
+  4: () => {},
   // version 0 (pre-release): elements had `outline` as {x,y} objects
   0: (d) => {
     for (const e of (d.elements as Record<string, unknown>[]) ?? []) {
@@ -98,6 +101,7 @@ export function validateDocument(raw: unknown): ValidationResult {
     for(const group of doc.groups)groupPath(doc,group.id);
     for(const member of [...doc.elements,...doc.generators])groupPath(doc,member.groupId);
     for(const element of doc.elements){
+      if(element.sketch!==undefined){if(element.kind!=='panel'||!validSketch(element.sketch))throw new Error('invalid sketch');sketchProfile(element.sketch);}
       const processingIds=new Set<string>();
       for(const processing of element.processings){
         if(!processing||typeof processing.id!=='string'||!processing.id||processingIds.has(processing.id)||processing.suppressed!==undefined&&typeof processing.suppressed!=='boolean')throw new Error('invalid feature identity');
@@ -105,7 +109,7 @@ export function validateDocument(raw: unknown): ValidationResult {
       }
     }
     if(new Set([...elements.map(e=>e.id),...generators.map(g=>g.id)]).size!==elements.length+generators.length)throw new Error('duplicate object ID');
-  }catch{return {doc:null,errors:['Ungültige Baugruppenplatzierung oder Bearbeitungsreferenz.'],repairs};}
+  }catch{return {doc:null,errors:['Ungültige Baugruppenplatzierung, Skizze oder Bearbeitungsreferenz.'],repairs};}
   // Resolve generated part IDs before validating links, including external
   // links and explicit overrides. Never rebind a missing ID to a different part.
   try { for (const e of evaluate(doc).elements) ids.add(e.id); }

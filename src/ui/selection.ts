@@ -11,6 +11,9 @@ export function selectedElementIds(elements: Pick<EvalElement, 'id' | 'generator
     for (const id of selection) {
         if (known.has(id))
             out.add(id);
+        else if(id.startsWith('sketch:')){
+            try{const elementId=decodeURIComponent(id.slice(7));if(known.has(elementId))out.add(elementId);}catch{ /* malformed selection */ }
+        }
         else if (id.startsWith('group:')) {
             for(const element of elements)if(element.assemblyPath?.includes(id.slice(6)))out.add(element.id);
         }

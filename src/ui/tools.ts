@@ -6,12 +6,13 @@ import * as THREE from 'three';
 import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { createBeam } from '../core/elements';
 import {
-  add, cross, dot, len, neg, norm, scale, sub, toLocal, uid, type Frame, type Vec3,
+  add, dot, len, neg, norm, scale, sub, toLocal, uid, type Frame, type Vec3,
 } from '../core/math';
 import type { Element, OutlinePt, Processing } from '../core/model';
 import { t } from './i18n';
 import { closestEdgePoint, parseToolDimensions, standardPlane, validOutline, type SnapEdge, type WorkPlane } from './precision';
 import { evaluated, getState, setState, toast, updateDoc } from './store';
+import { drawingPlane, faceWorkPlane } from './workplanes';
 
 export type ToolName = 'select' | 'beam' | 'rect' | 'circle' | 'poly' | 'measure' | 'cutRect' | 'cutCircle';
 
@@ -46,6 +47,8 @@ export class ToolController {
   input = '';
   inputError = false;
   measure: { a: Vec3; b: Vec3 } | null = null;
+  hoverPlane:WorkPlane|null=null;
+  blocked=false;
 
   get tool(): ToolName {
     return getState().tool as ToolName;
@@ -62,6 +65,8 @@ export class ToolController {
     this.axisLock = null;
     this.input = '';
     this.measure = null;
+    this.hoverPlane=null;
+    this.blocked=false;
     this.inputError = false;
     this.draw();
     this.publish();
@@ -81,8 +86,10 @@ export class ToolController {
 
   /** Short instruction for the hint bar. */
   hint(): string {
+    if(getState().planePick)return t('plane.pickHint');
     const de = getState().lang === 'de';
     const n = this.points.length;
+    if(!n&&['beam','rect','circle','poly'].includes(this.tool))return t('plane.start');
     const typed = this.input ? ` · ${de ? 'Eingabe' : 'Input'}: ${this.input}` : '';
     switch (this.tool) {
       case 'beam':
@@ -103,7 +110,7 @@ export class ToolController {
   }
 
   private publish() {
-    setState({ toolHint: this.hint(), toolDraft: { input: this.input, points: this.points.length, error: this.inputError, snap: this.current?.kind ?? '' } });
+    setState({ toolHint: this.hint(), toolDraft: { input: this.input, points: this.points.length, error: this.inputError, snap: this.current?.kind ?? '',blocked:this.blocked } });
   }
 
   // ---------------------------------------------------------------- snapping
@@ -150,7 +157,7 @@ export class ToolController {
   private activePlane(): WorkPlane | null {
     if (this.plane) return this.plane;
     const s = getState();
-    return s.workPlane !== 'auto' && this.tool !== 'cutRect' && this.tool !== 'cutCircle' ? standardPlane(s.workPlane, s.workZ) : null;
+    return this.tool!=='measure'&&this.tool!=='cutRect'&&this.tool!=='cutCircle'?drawingPlane(s):null;
   }
 
   /** Apply axis lock / inference relative to the last point. */
@@ -185,8 +192,14 @@ export class ToolController {
 
   move(x: number, y: number) {
     if (this.tool === 'select') return;
+    if(getState().planePick){
+      const hit=this.view?.pickDetailed(x,y),element=hit&&evaluated().elements.find(e=>e.id===hit.id);
+      this.hoverPlane=hit?faceWorkPlane(hit.point,hit.normal,element?.frame,hit.id):null;
+      this.current=null;this.draw();this.publish();return;
+    }
     let sn = this.snap(x, y);
-    if (!sn) return;
+    if (!sn) {this.current=null;this.blocked=true;this.draw();this.publish();return;}
+    this.blocked=false;
     if (this.tool !== 'rect' && this.tool !== 'cutRect' && this.tool !== 'circle' && this.tool !== 'cutCircle') sn = this.constrain(sn, x, y);
     this.current = sn;
     this.draw();
@@ -196,11 +209,18 @@ export class ToolController {
   click(x: number, y: number): boolean {
     const tool = this.tool;
     if (tool === 'select') return false;
+    if(getState().planePick){
+      const hit=this.view?.pickDetailed(x,y);if(!hit)return true;
+      const element=evaluated().elements.find(e=>e.id===hit.id);
+      setState({drawingPlane:faceWorkPlane(hit.point,hit.normal,element?.frame,hit.id),workPlane:'auto',workZ:0,planePick:false});
+      this.reset();return true;
+    }
     let sn = this.snap(x, y);
-    if (!sn) return true;
+    if (!sn) {this.current=null;this.blocked=true;this.draw();this.publish();return true;}
+    this.blocked=false;
     const planar = tool === 'rect' || tool === 'cutRect' || tool === 'circle' || tool === 'cutCircle' || tool === 'poly';
-    if (planar && this.points.length === 0) this.plane = this.planeFrom(sn);
-    if (planar && this.plane) sn = { ...sn, p: projectToPlane(sn.p, this.plane) };
+    if ((planar||tool==='beam') && this.points.length === 0) this.plane = this.planeFrom(sn);
+    if ((planar||tool==='beam') && this.plane) sn = { ...sn, p: projectToPlane(sn.p, this.plane) };
     if (!planar || tool === 'poly') sn = this.constrain(sn, x, y);
     this.addPoint(sn.p);
     return true;
@@ -208,17 +228,11 @@ export class ToolController {
 
   private planeFrom(sn: SnapResult): WorkPlane {
     const s = getState();
-    if (s.workPlane !== 'auto' && this.tool !== 'cutRect' && this.tool !== 'cutCircle') return standardPlane(s.workPlane, s.workZ);
+    const fixed=drawingPlane(s);
+    if(fixed&&this.tool!=='cutRect'&&this.tool!=='cutCircle')return fixed;
     if (sn.elementId && sn.normal) {
       const e = evaluated().elements.find((x) => x.id === sn.elementId);
-      const n = norm(sn.normal);
-      // In-plane axes from the element frame: pick the two frame axes most perpendicular to n.
-      const cands = e ? [e.frame.x, e.frame.y, e.frame.z] : [[1, 0, 0], [0, 1, 0], [0, 0, 1]] as Vec3[];
-      const sorted = [...cands].sort((a, b) => Math.abs(dot(a, n)) - Math.abs(dot(b, n)));
-      let u = norm(sub(sorted[0], scale(n, dot(sorted[0], n))));
-      let v = cross(n, u);
-      if (Math.abs(u[2]) > Math.abs(v[2]) + 1e-6) { const tmp = u; u = v; v = neg(tmp); v = cross(n, u); }
-      return { o: sn.p, u, v, n, elementId: sn.elementId };
+      return faceWorkPlane(sn.p,sn.normal,e?.frame,sn.elementId);
     }
     return { o: [sn.p[0], sn.p[1], sn.kind === 'grid' ? s.workZ : sn.p[2]], u: [1, 0, 0], v: [0, 1, 0], n: [0, 0, 1] };
   }
@@ -294,6 +308,7 @@ export class ToolController {
   }
 
   applyInput(): boolean {
+    if(getState().planePick)return false;
     const p0 = this.points.at(-1);
     if (!p0) { this.inputError = true; this.publish(); return false; }
     if (!this.input && this.tool === 'poly') { this.finishPoly(); this.publish(); return !this.inputError; }
@@ -337,7 +352,7 @@ export class ToolController {
   private finishBeam(a: Vec3, b: Vec3) {
     const s = getState();
     if (len(sub(b, a)) < 5) { this.points = [a]; return; }
-    const e = createBeam(a, b, s.beamSection[0], s.beamSection[1], { name: t('role.beam'), role: 'beam', materialId: s.beamMaterial, align: 'bottom', id: uid('b') });
+    const e = createBeam(a, b, s.beamSection[0], s.beamSection[1], { name: t('role.beam'), role: 'beam', materialId: s.beamMaterial, align: 'bottom', up:this.activePlane()?.n, id: uid('b') });
     updateDoc((d) => d.elements.push(e));
     setState({ selection: [e.id] });
     this.points = [b]; // continue a chain from the end point
@@ -465,14 +480,18 @@ export class ToolController {
       o.position.set(...p);
       add3(o);
     };
-    const activePlane = this.activePlane() ?? (getState().workPlane === 'auto' && this.tool !== 'select' ? standardPlane('xy', getState().workZ) : null);
+    const activePlane = getState().planePick?this.hoverPlane:this.activePlane() ?? (getState().workPlane === 'auto' && this.tool !== 'select'&&this.tool!=='measure' ? standardPlane('xy', getState().workZ) : null);
     if (activePlane && this.tool !== 'select') {
-      const extent = Math.max(200, getState().snap * 20), pl = activePlane;
+      const pl = activePlane,extent = Math.max(400, getState().snap * 20,...[...this.points,...(cur?[cur]:[])].map(p=>len(sub(p,pl.o))+80));
       for (let i = -5; i <= 5; i++) for (const [axis, other] of [[pl.u, pl.v], [pl.v, pl.u]]) {
-        const origin = add(this.points[0] ?? pl.o, scale(other, i * extent / 5));
+        const origin = add(pl.o, scale(other, i * extent / 5));
         line([sub(origin, scale(axis, extent)), add(origin, scale(axis, extent))], 0x7c8190, true);
       }
-      label(pl.o, getState().workPlane === 'auto' ? t('precision.auto') : getState().workPlane.toUpperCase(), 'dim-label');
+      const corners=[add(pl.o,add(scale(pl.u,-extent),scale(pl.v,-extent))),add(pl.o,add(scale(pl.u,extent),scale(pl.v,-extent))),add(pl.o,add(scale(pl.u,extent),scale(pl.v,extent))),add(pl.o,add(scale(pl.u,-extent),scale(pl.v,extent)))];
+      line([...corners,corners[0]],0x1c9cbd);
+      const geometry=new THREE.PlaneGeometry(extent*2,extent*2);geometry.translate(0,0,-0.05);
+      this.panelGhost(geometry,pl.o,pl,false);
+      label(pl.o, getState().workPlane === 'auto' ? t('plane.face') : getState().workPlane.toUpperCase(), 'dim-label');
     }
     if (this.measure) {
       const { a, b } = this.measure;
@@ -525,7 +544,7 @@ export class ToolController {
 
   private panelGhost(geometry: THREE.BufferGeometry, origin: Vec3, plane: WorkPlane, cut: boolean) {
     if (!this.view) { geometry.dispose(); return; }
-    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: cut ? 0xe5484d : 0x0a84ff, transparent: true, opacity: 0.18, depthWrite: false }));
+    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color: cut ? 0xe5484d : 0x0a84ff, transparent: true, opacity: 0.18, depthWrite: false,side:THREE.DoubleSide }));
     mesh.matrixAutoUpdate = false;
     const { u, v, n } = plane;
     mesh.matrix.set(u[0],v[0],n[0],origin[0],u[1],v[1],n[1],origin[1],u[2],v[2],n[2],origin[2],0,0,0,1);
@@ -535,7 +554,7 @@ export class ToolController {
   private beamGhost(a: Vec3, b: Vec3) {
     if (len(sub(b, a)) < 5 || !this.view) return;
     const s = getState();
-    const e = createBeam(a, b, s.beamSection[0], s.beamSection[1], { name: '', materialId: s.beamMaterial, align: 'bottom' });
+    const e = createBeam(a, b, s.beamSection[0], s.beamSection[1], { name: '', materialId: s.beamMaterial, align: 'bottom',up:this.activePlane()?.n });
     const g = new THREE.BoxGeometry(e.length, e.width, e.height);
     g.translate(e.length / 2, e.width / 2, e.height / 2);
     const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: 0x0a84ff, transparent: true, opacity: 0.25, depthWrite: false }));
@@ -550,10 +569,11 @@ export class ToolController {
 
 function intersectPlane(ray: { origin: Vec3; dir: Vec3 }, pl: WorkPlane): Vec3 | null {
   const den = dot(ray.dir, pl.n);
-  if (Math.abs(den) < 1e-9) return null;
+  if (Math.abs(den) < 1e-6) return null;
   const tt = dot(sub(pl.o, ray.origin), pl.n) / den;
   if (tt < 0) return null;
-  return add(ray.origin, scale(ray.dir, tt));
+  const p=add(ray.origin, scale(ray.dir, tt));
+  return p.every(v=>Number.isFinite(v)&&Math.abs(v)<=1e6)?p:null;
 }
 
 function projectToPlane(p: Vec3, pl: WorkPlane): Vec3 {

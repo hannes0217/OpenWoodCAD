@@ -1,9 +1,10 @@
 import { catalogFor, type Catalog } from './catalog';
 import { groupFrame, groupPath, transformMotion } from './assemblies';
+import { sketchProfile } from './sketch';
 import { GENERATORS } from './generators';
 import { withDefaults, type GeneratorOutput } from './generators/types';
 import { applyJoint } from './joints';
-import { composeFrame, round, type Frame } from './math';
+import { composeFrame, toWorld, round, type Frame } from './math';
 import type { Element, HardwareUse, Joint, Msg, OwcDocument, Processing } from './model';
 import type { StaticSystem } from './statics/model';
 
@@ -29,11 +30,17 @@ export interface Evaluated {
 function transformElement(e: Element, f: Frame): Element {
   return { ...e, frame: composeFrame(f, e.frame), motion:transformMotion(e.motion,f) };
 }
+function evaluateSketch(element:Element):Element {
+  if(!element.sketch)return element;
+  const profile=sketchProfile(element.sketch);
+  return {...element,length:profile.length,width:profile.width,outline:profile.outline,
+    frame:{...element.frame,o:toWorld(element.frame,[...profile.offset,0])}};
+}
 
 /** Run generators and joints. Pure function of the document. */
 export function evaluate(doc: OwcDocument): Evaluated {
   const catalog = catalogFor(doc);
-  const elements: (Element & {assemblyPath?:string[]})[] = doc.elements.map(e=>({...transformElement(e,groupFrame(doc,e.groupId)),assemblyPath:groupPath(doc,e.groupId),hidden:e.hidden||groupPath(doc,e.groupId).some(id=>doc.groups.find(g=>g.id===id)?.hidden),processings:[...e.processings]}));
+  const elements: (Element & {assemblyPath?:string[]})[] = doc.elements.map(e=>({...transformElement(evaluateSketch(e),groupFrame(doc,e.groupId)),assemblyPath:groupPath(doc,e.groupId),hidden:e.hidden||groupPath(doc,e.groupId).some(id=>doc.groups.find(g=>g.id===id)?.hidden),processings:[...e.processings]}));
   const joints: Joint[] = [...doc.joints];
   const hardware: HardwareUse[] = [...doc.hardware];
   const warnings: Msg[] = [];

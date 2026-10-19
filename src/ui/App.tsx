@@ -140,6 +140,7 @@ export default function App() {
           { label: t('menu.selectAll'), action: selectAll, shortcut: 'Strg+A' },
         ]} />
         <Menu label={t('menu.insert')} items={[
+          {label:t('sketch.new'),action:()=>setState({workspace:'model',dialog:{type:'sketch'}})},
           { label: t('menu.assistant'), action: () => setState({ dialog: { type: 'insert' } }), shortcut: 'I' },
           { label: t('menu.beam'), action: () => setState({ tool: 'beam', workspace: 'model' }), shortcut: 'B' },
           { label: t('tool.rect'), action: () => setState({ tool: 'rect', workspace: 'model' }), shortcut: 'P' },

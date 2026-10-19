@@ -39,9 +39,10 @@ export function ModelToolbar() {
       </div>
       <div className="tb-group">
         <span className="tb-group-name">{t('cad.create')}</span>
+        <TB onClick={()=>setState({dialog:{type:'sketch'}})} icon="✎" label={t('sketch.new')} tip={t('sketch.new')}/>
         <TB onClick={() => setState({ dialog: { type: 'insert' } })} icon="＋" label={de ? 'Vorlage' : 'Template'} tip={de ? 'Möbel, Dach, Wand … aus einer Vorlage einfügen (I)' : 'Insert furniture, roof, wall … from a template (I)'} />
-        <TB on={s.tool === 'beam'} onClick={() => toggle('beam')} icon="▬" label={de ? 'Balken' : 'Beam'} tip={de ? 'Balken zeichnen: Punkte anklicken, Länge tippbar, X/Y/Z sperrt Richtung (B)' : 'Draw beams: click points, type length, X/Y/Z locks direction (B)'} />
-        <TB on={s.tool === 'rect'} onClick={() => toggle('rect')} icon="▭" label={de ? 'Platte' : 'Panel'} tip={de ? 'Rechteckige Platte auf Boden oder Bauteilfläche, Maße tippbar (P)' : 'Rectangular panel on ground or part face, type size (P)'} />
+        <TB on={s.tool === 'beam'} onClick={() => toggle('beam')} icon="▬" label={de ? 'Balken' : 'Beam'} tip={t('plane.beamTool')} />
+        <TB on={s.tool === 'rect'} onClick={() => toggle('rect')} icon="▭" label={de ? 'Platte' : 'Panel'} tip={t('plane.panelTool')} />
         <TB on={s.tool === 'circle'} onClick={() => toggle('circle')} icon="◯" tip={de ? 'Runde Platte: Mittelpunkt + Radius, Durchmesser tippbar (C)' : 'Round panel: centre + radius (C)'} />
         <TB on={s.tool === 'poly'} onClick={() => toggle('poly')} icon="⬠" tip={de ? 'Formteil mit freiem Umriss (L)' : 'Shaped part with free outline (L)'} />
       </div>

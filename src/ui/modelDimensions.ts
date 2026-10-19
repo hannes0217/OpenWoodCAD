@@ -6,11 +6,12 @@ import { frameFromEuler, frameToEuler } from '../core/math';
 import type { OwcDocument } from '../core/model';
 import { parseMeasure } from './precision';
 import { staticChecks } from '../core/checks';
+import { sketchProfile, solveSketch } from '../core/sketch';
 import { getState, setState, updateDoc } from './store';
 
 export interface ModelDimension {
-  key:string; object:string; field:string; kind:'size'|'parameter'|'rotation';
-  label:string; value:number; unit:string; min:number; max:number;
+  key:string; object:string; field:string; kind:'size'|'parameter'|'rotation'|'sketch';
+  label:string; args?:Record<string,string|number>; value:number; unit:string; min:number; max:number;
 }
 export interface DimensionEdit {
   base:OwcDocument; projectId:string; selection:string[]; dimension:ModelDimension;
@@ -35,6 +36,12 @@ export function modelDimensions(doc:OwcDocument, ev:Evaluated, selection:string[
     // Custom outlines retain their real contour; they cannot be resized by changing a box.
     if(e&&!e.outline&&!('sketch' in e))for(const field of ['length','width','height'] as const)
       add('size',field,`props.${field}`,e[field],'mm',1,1000000);
+    if(e?.sketch)for(const [index,c] of e.sketch.constraints.filter(c=>'value' in c).slice(0,6).entries()) {
+      if(!('value' in c))continue;
+      const angle=c.type==='angle';
+      add('sketch',c.id,'sketch.driving',c.value,angle?'°':'mm',angle?-360:c.type==='distanceX'||c.type==='distanceY'?-1e6:c.type==='length'?0.1:0,angle?360:1e6);
+      result.at(-1)!.args={n:index+1};
+    }
   }
   const angles=frameToEuler(objectWorldFrame(doc,object));
   for(const [i,axis] of ['Z','Y','X'].entries())add('rotation',String(i),`dimension.rotation${axis}`,angles[i],'°',-36000,36000);
@@ -53,6 +60,11 @@ export function dimensionCandidate(base:OwcDocument,dimension:ModelDimension,inp
     const g=doc.generators.find(g=>`gen:${g.id}`===dimension.object);
     if(!g)throw new Error('Missing generator');
     g.params[dimension.field]=value;
+  } else if(dimension.kind==='sketch') {
+    const e=doc.elements.find(e=>e.id===dimension.object),c=e?.sketch?.constraints.find(c=>c.id===dimension.field);
+    if(!e?.sketch||!c||!('value' in c))throw new Error('Missing driving dimension');
+    c.value=value;const solution=solveSketch(e.sketch),profile=sketchProfile(e.sketch,solution);
+    e.sketch=solution.sketch;e.length=profile.length;e.width=profile.width;e.outline=profile.outline;
   } else {
     const e=doc.elements.find(e=>e.id===dimension.object);
     if(!e||e.outline||'sketch' in e)throw new Error('Derived dimensions');

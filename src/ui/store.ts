@@ -4,7 +4,7 @@ import { uid } from '../core/math';
 import { emptyDocument, type OwcDocument } from '../core/model';
 import { validateDocument } from '../core/validate';
 import { addPoint, loadProject, saveProject } from './projects';
-import type { PlaneChoice } from './precision';
+import type { PlaneChoice, WorkPlane } from './precision';
 import { readCadSettings, type CadSettings } from './cadSettings';
 import type { SelectionFilter } from './selection';
 import type { DimensionEdit } from './modelDimensions';
@@ -46,7 +46,7 @@ export interface AppState {
   dirty: boolean;
   fileName: string | null;
   toast: { text: string; kind: 'info' | 'error' } | null;
-  dialog: null | { type: 'insert' } | { type: 'about' } | { type: 'joint'; a: string; b: string; id?: string } | { type: 'shortcuts' } | { type: 'projects' };
+  dialog: null | { type: 'insert' } | { type:'sketch';id?:string } | { type: 'about' } | { type: 'joint'; a: string; b: string; id?: string } | { type: 'shortcuts' } | { type: 'projects' };
   /** Chosen entry: furniture, carpentry or free drawing. */
   mode: 'furniture' | 'carpentry' | 'free' | null;
   tourStep: number | null;
@@ -59,7 +59,9 @@ export interface AppState {
   panelThickness: number;
   panelMaterial: string;
   workPlane: PlaneChoice;
-  toolDraft: { input: string; points: number; error: boolean; snap: string };
+  drawingPlane:WorkPlane|null;
+  planePick:boolean;
+  toolDraft: { input: string; points: number; error: boolean; snap: string;blocked?:boolean };
   workZ: number;
   snap: number;
 }
@@ -134,7 +136,9 @@ let state: AppState = {
   beamMaterial: 'kvh_c24',
   panelThickness: 19,
   panelMaterial: 'chip19_white',
-  workPlane: 'auto',
+  workPlane: 'xy',
+  drawingPlane:null,
+  planePick:false,
   toolDraft: { input: '', points: 0, error: false, snap: '' },
   workZ: 0,
   snap: 10,
@@ -152,6 +156,10 @@ export function getState(): AppState {
 
 export function setState(patch: Partial<AppState> | ((s: AppState) => Partial<AppState>)): void {
   const p = typeof patch === 'function' ? patch(state) : patch;
+  if('projectId' in p&&p.projectId!==state.projectId){
+    p.drawingPlane=null;p.planePick=false;p.workPlane='xy';p.workZ=0;
+  }
+  if('tool' in p&&p.tool!==state.tool){p.planePick=false;if(state.planePick&&!state.drawingPlane)p.workPlane='xy';}
   state = { ...state, ...p };
   const edit=state.dimensionEdit;
   if(edit&&(edit.base!==state.doc||edit.projectId!==state.projectId||edit.selection!==state.selection||state.tool!=='select'||state.workspace!=='model'||state.dialog||state.jointPreview))state={...state,dimensionEdit:null};
@@ -280,6 +288,7 @@ export function updateDoc(fn: (d: OwcDocument) => void): void {
 
 /** Replace the document (load/new) – clears history. */
 export function replaceDoc(doc: OwcDocument, fileName: string | null = null): void {
+  setState({drawingPlane:null,planePick:false,workPlane:'xy',workZ:0});
   setState({ doc, past: [], future: [], selection: [], dirty: false, fileName,tool:'select',gizmoMode:'none',issueIds:[],hover:null,openGroups:{},jointPreview:null,selectionFilter:'all',visibilityOverrides:{},isolatedIds:null,contextMenu:null,contextPreview:null,directMove:null });
   scheduleSave();
 }

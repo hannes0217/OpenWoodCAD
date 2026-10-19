@@ -1,7 +1,9 @@
+import { planesDe,planesEn } from './i18n-planes';
 import { dimensionsDe,dimensionsEn } from './i18n-dimensions';
 import { drawingDe, drawingEn } from './i18n-drawing';
 import { dragDe,dragEn } from './i18n-drag';
 import { assemblyDe, assemblyEn } from './i18n-assembly';
+import { sketchDe, sketchEn } from './i18n-sketch';
 import { jointEditDe, jointEditEn } from './i18n-joint-edit';
 import type { Msg } from '../core/model';
 import { genDe, genEn } from './i18n-gen';
@@ -136,8 +138,9 @@ Object.assign(de,precisionDe);Object.assign(en,precisionEn);
 Object.assign(de,contextDe);Object.assign(en,contextEn);
 
 const dicts: Record<Lang, Dict> = { de, en };
-Object.assign(de,dragDe,dimensionsDe);Object.assign(en,dragEn,dimensionsEn);
+Object.assign(de,dragDe,dimensionsDe,planesDe);Object.assign(en,dragEn,dimensionsEn,planesEn);
 Object.assign(de,assemblyDe);Object.assign(en,assemblyEn);
+Object.assign(de,sketchDe);Object.assign(en,sketchEn);
 
 /** Independent dictionary snapshot for coverage checks, without German fallback. */
 export function translationEntries(lang: Lang): Readonly<Dict> {

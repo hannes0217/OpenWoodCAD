@@ -7,6 +7,7 @@ import { MaterialSelect, NumberInput, Row, Section, TextInput } from '../compone
 import { FittingLibrary } from '../components/FittingLibrary';
 import { AssemblyEditor, MembershipEditor } from '../components/AssemblyEditor';
 import { OperationEditor } from '../components/OperationEditor';
+import { sketchFromElement } from '../sketchDraft';
 import { objectWorldFrame, setObjectWorldFrame } from '../../core/assemblies';
 import { ParamForm } from '../components/ParamForm';
 import { TransformPanel } from './TransformPanel';
@@ -26,6 +27,7 @@ export function Properties() {
   const first = selection[0];
   if(selection.length===1&&first.startsWith('group:'))return <div className="props"><AssemblyEditor id={first.slice(6)}/><TransformPanel/></div>;
   if(selection.length===1&&first.startsWith('proc:'))return <div className="props"><OperationEditor reference={first}/></div>;
+  if(selection.length===1&&first.startsWith('sketch:'))return <div className="props pad"><h3>{t('sketch.title')}</h3><button className="btn" onClick={()=>setState({dialog:{type:'sketch',id:decodeURIComponent(first.slice(7))}})}>{t('sketch.edit')}</button></div>;
   const elem = ev.elements.find((e) => e.id === first);
   const genId = first.startsWith('gen:') ? first.slice(4) : selection.length === 1 ? elem?.generator : undefined;
   const gen = genId ? doc.generators.find((g) => g.id === genId) : undefined;
@@ -113,7 +115,8 @@ function ElementEditor({ id }: { id: string }) {
     const el = d.elements.find((x) => x.id === id);
     if (el) {const local=el.frame;el.frame=objectWorldFrame(d,id);fn(el);const world=el.frame;el.frame=local;setObjectWorldFrame(d,id,world);}
   });
-  const euler = frameToEuler(e.frame);
+  const placement=e.sketch?objectWorldFrame(getState().doc,id):e.frame;
+  const euler = frameToEuler(placement);
   let kg = 0;
   try { kg = (e.length * e.width * e.height / 1e9) * findMaterial(ev.catalog, e.materialId).density; } catch { /* unknown material */ }
   return (
@@ -122,15 +125,16 @@ function ElementEditor({ id }: { id: string }) {
       <div className="pad">
         <MembershipEditor objectKey={id}/>
         <Row label={t('props.material')}><MaterialSelect value={e.materialId} catalog={ev.catalog} onChange={(m) => set((el) => { el.materialId = m; })} /></Row>
-        <Row label={t('props.length')}><NumberInput value={e.length} min={1} unit="mm" onCommit={(v) => set((el) => { el.length = v; })} /></Row>
-        <Row label={t('props.width')}><NumberInput value={e.width} min={1} unit="mm" onCommit={(v) => set((el) => { el.width = v; })} /></Row>
+        <Row label={t('props.length')}><NumberInput disabled={!!e.sketch} value={e.length} min={1} unit="mm" onCommit={(v) => set((el) => { el.length = v; })} /></Row>
+        <Row label={t('props.width')}><NumberInput disabled={!!e.sketch} value={e.width} min={1} unit="mm" onCommit={(v) => set((el) => { el.width = v; })} /></Row>
         <Row label={t('props.height')}><NumberInput value={e.height} min={1} unit="mm" onCommit={(v) => set((el) => { el.height = v; })} /></Row>
         <Row label={t('safe.rawWeight')}>{fmt(kg, 1)} kg</Row>
         <ProcessingList ids={[e.id]} />
+        {!!sketchFromElement(e)&&<button className="btn subtle" onClick={()=>setState({dialog:{type:'sketch',id}})}>{t(e.sketch?'sketch.edit':'sketch.convert')}</button>}
       </div>
-      <Section title={t('props.placement')}>
+      <Section title={t(e.sketch?'sketch.origin':'props.placement')}>
         {(['X', 'Y', 'Z'] as const).map((ax, i) => (
-          <Row key={ax} label={ax}><NumberInput value={Math.round(e.frame.o[i] * 10) / 10} step={10} unit="mm" onCommit={(v) => set((el) => { const o = [...el.frame.o] as Vec3; o[i] = v; el.frame = { ...el.frame, o }; })} /></Row>
+          <Row key={ax} label={ax}><NumberInput value={Math.round(placement.o[i] * 10) / 10} step={10} unit="mm" onCommit={(v) => set((el) => { const o = [...el.frame.o] as Vec3; o[i] = v; el.frame = { ...el.frame, o }; })} /></Row>
         ))}
         {(['Z', 'Y', 'X'] as const).map((ax, i) => (
           <Row key={`r${ax}`} label={`${t('props.rotation')} ${ax}`}><NumberInput value={euler[i]} step={15} unit="°" onCommit={(v) => set((el) => { const eu = [...euler] as Vec3; eu[i] = v; el.frame = frameFromEuler(el.frame.o, eu); })} /></Row>

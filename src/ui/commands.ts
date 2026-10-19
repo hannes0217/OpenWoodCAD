@@ -15,6 +15,7 @@ export function cadCommands():CadCommand[] {
  const tool=(id:Tool,label:string,group:string,shortcut?:string):CadCommand => ({id:`tool.${id}`,label:t(label),group:t(group),shortcut,run:()=>setState({workspace:'model',tool:id,...(id==='select'?{gizmoMode:'none' as const}:{})})});
  const views:[ViewName,string][]=[['iso','view.iso'],['front','view.front'],['back','cad.back'],['side','view.side'],['left','cad.left'],['top','view.top'],['bottom','cad.bottom']];
  return [
+  {id:'sketch.new',label:t('sketch.new'),group:t('cad.create'),run:()=>setState({workspace:'model',dialog:{type:'sketch'}})},
   {id:'assembly.create',label:t('assembly.create'),group:t('assembly.title'),disabled:!movableRoots(s.doc,evaluated(),s.selection).length,run:groupSelection},
   {id:'assembly.dissolve',label:t('assembly.dissolve'),group:t('assembly.title'),disabled:!s.selection.some(key=>key.startsWith('group:')),run:dissolveSelection},
   tool('select','cad.select','cad.modify'),tool('beam','menu.beam','cad.create','B'),tool('rect','tool.rect','cad.create','P'),tool('circle','tool.circle','cad.create','C'),tool('poly','tool.poly','cad.create','L'),

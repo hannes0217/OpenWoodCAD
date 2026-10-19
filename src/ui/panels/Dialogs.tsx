@@ -1,4 +1,5 @@
 import { JointWorkbench } from '../components/JointWorkbench';
+import { SketchEditor } from '../components/SketchEditor';
 import { GENERATOR_LIST } from '../../core/generators';
 import { insertGenerator } from '../actions';
 import { ProjectsDialog } from './ProjectsDialog';
@@ -29,6 +30,7 @@ export function Dialogs() {
   const dialog = useApp((s) => s.dialog);
   const close = () => setState({ dialog: null });
   if (!dialog) return null;
+  if(dialog.type==='sketch')return <SketchEditor key={dialog.id??'new'} id={dialog.id}/>;
   if (dialog.type === 'insert') return <InsertDialog onClose={close} />;
   if (dialog.type === 'joint') return <JointWorkbench a={dialog.a} b={dialog.b} id={dialog.id} onClose={close} />;
   if (dialog.type === 'about') return <AboutDialog onClose={close} />;

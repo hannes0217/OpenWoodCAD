@@ -1,6 +1,7 @@
 import { movableRoots } from '../core/assemblies';
 import { beginDimensionEdit, modelDimensions, type ModelDimension } from './modelDimensions';
 import { fmt, t } from './i18n';
+import { drawingPlane } from './workplanes';
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -12,7 +13,7 @@ import { frameMatrix, type Vec3 } from '../core/math';
 import { geom, geomSig } from './geomClient';
 import { motionMatrix, motionOpenness } from './motion';
 import { orbitCamera } from './orbit';
-import type { SnapEdge } from './precision';
+import type { SnapEdge, WorkPlane } from './precision';
 import { tools, type ViewApi } from './tools';
 import { getState, setState, subscribe, evaluated, type AppState } from './store';
 import { changeProjection, fitCamera, resizeCamera, VIEW_DIRECTIONS, type CadCamera, type ViewName } from './cameraMath';
@@ -155,6 +156,12 @@ class SceneView implements ViewApi {
 
   configureNavigation() {
     configureCadNavigation(this.controls,getState().cad.navigation,getState().tool!=='select');
+  }
+  alignWorkPlane(plane:WorkPlane){
+    this.cancelInteraction?.();
+    const distance=this.root.children.length?this.camera.position.distanceTo(this.controls.target):1200,target=new THREE.Vector3(...plane.o);
+    this.camera.up.set(...plane.v);this.camera.position.copy(target).addScaledVector(new THREE.Vector3(...plane.n),Math.max(1000,distance));
+    this.camera.lookAt(target);this.resetOrbitTarget(target);this.camera.updateMatrixWorld();this.render();
   }
   cancelGizmo(){
     if(!this.gizmo.dragging)return;
@@ -319,13 +326,14 @@ class SceneView implements ViewApi {
     }
     const key = `${ev.elements.length}`;
     if (!this.fittedOnce && ev.elements.length > 0) {
-      this.fit('iso');
+      if(s.tool==='select')this.fit('iso');
       this.fittedOnce = true;
-    } else if (key !== this.lastKey && ev.elements.length > 0 && this.lastKey === '0') {
+    } else if (key !== this.lastKey && ev.elements.length > 0 && this.lastKey === '0'&&s.tool==='select') {
       this.fit('iso');
     }
     this.lastKey = key;
     this.updateGrid(box);
+    this.grid.visible=s.tool==='select'||s.tool==='measure';
     this.updateGizmo(s, ev);
     this.dirty = true;
   }
@@ -388,7 +396,7 @@ class SceneView implements ViewApi {
     const dimensions=modelDimensions(s.dimensionEdit?.candidate??s.doc,ev,s.selection);
     const button=(dimension:ModelDimension)=>{
       const b=document.createElement('button');b.type='button';b.className='model-dimension';
-      b.textContent=`${t(dimension.label)} ${fmt(dimension.value,2).replace(/([.,]00)$/,'')} ${dimension.unit}`;
+      b.textContent=`${t(dimension.label,dimension.args)} ${fmt(dimension.value,2).replace(/([.,]00)$/,'')} ${dimension.unit}`;
       b.title=t('dimension.hint');b.disabled=!!s.dimensionEdit||!!s.jointPreview;
       b.addEventListener('pointerdown',e=>e.stopPropagation());
       b.addEventListener('click',e=>{e.stopPropagation();beginDimensionEdit(dimension);});return b;
@@ -414,9 +422,9 @@ class SceneView implements ViewApi {
       local.forEach((d,i)=>addDim(edges[i][0],edges[i][1],'',d));
     }
     const card=document.createElement('div');card.className='model-dimension-card';
-    const parameters=dimensions.filter(d=>d.kind==='parameter');
+    const parameters=dimensions.filter(d=>d.kind==='parameter'||d.kind==='sketch');
     const header=document.createElement('div');header.className='small muted';
-    header.textContent=t(parameters.length?'dimension.template':local.length?'dimension.raw':'dimension.placement');card.appendChild(header);
+    header.textContent=t(parameters[0]?.kind==='sketch'?'sketch.drivingTitle':parameters.length?'dimension.template':local.length?'dimension.raw':'dimension.placement');card.appendChild(header);
     if(parameters.length){const row=document.createElement('div');row.className='model-dimension-row';parameters.forEach(d=>row.appendChild(button(d)));card.appendChild(row);}
     const rotations=document.createElement('div');rotations.className='model-dimension-row';rotations.title=t('dimension.placement');
     dimensions.filter(d=>d.kind==='rotation').forEach(d=>rotations.appendChild(button(d)));card.appendChild(rotations);
@@ -592,6 +600,11 @@ export function viewportFit(view: ViewName = 'iso') {
   if(active){active.cancelInteraction?.();active.fit(view);}else requestAnimationFrame(()=>active?.fit(view));
 }
 
+export function viewportAlignPlane() {
+  const plane=drawingPlane(getState());if(!active||!plane)return;
+  active.alignWorkPlane(plane);
+}
+
 export function viewportFitIds(ids: string[]) {
   setTimeout(() => {active?.cancelInteraction?.();active?.fitIds(ids);}, 50);
 }
@@ -657,7 +670,7 @@ export default function Viewport() {
       if(s.projectId!==prev.projectId||s.cad.directDrag!==prev.cad.directDrag||s.cad.navigation!==prev.cad.navigation||s.cad.projection!==prev.cad.projection){cancelDirect();view.cancelGizmo();}
       if(s.cad.projection!==prev.cad.projection) view.configureProjection();
       if(s.cad.navigation!==prev.cad.navigation || s.tool!==prev.tool) {view.configureNavigation();refresh();}
-      if (s.tool !== prev.tool || s.workPlane !== prev.workPlane || s.workZ !== prev.workZ || s.projectId !== prev.projectId) { tools.reset(); }
+      if (s.tool !== prev.tool || s.workPlane !== prev.workPlane || s.workZ !== prev.workZ || s.projectId !== prev.projectId || s.drawingPlane!==prev.drawingPlane || s.planePick!==prev.planePick) { tools.reset(); }
       const motionOnly = s.doc === prev.doc && s.selection === prev.selection && (s.drawerOpen !== prev.drawerOpen || s.openGroups !== prev.openGroups);
       if (motionOnly) {cancelDirect();view.cancelGizmo();view.updateMotion(s);}
       else if (s.doc !== prev.doc || s.selection !== prev.selection || s.colorBy !== prev.colorBy || s.xray !== prev.xray || s.section !== prev.section || s.showLabels !== prev.showLabels || s.gizmoMode !== prev.gizmoMode || s.tool !== prev.tool || s.snap !== prev.snap || s.issueIds !== prev.issueIds || s.visibilityOverrides!==prev.visibilityOverrides || s.isolatedIds!==prev.isolatedIds || s.contextPreview!==prev.contextPreview || s.jointPreview!==prev.jointPreview || s.dimensionEdit!==prev.dimensionEdit || s.lang!==prev.lang) refresh();

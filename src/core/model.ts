@@ -6,7 +6,7 @@ import type { Frame, Plane, Vec3 } from './math';
 // =====================================================================
 
 export const FORMAT = 'openwoodcad';
-export const FORMAT_VERSION = 4;
+export const FORMAT_VERSION = 5;
 
 export interface Localized {
   de: string;
@@ -32,6 +32,8 @@ export type OutlinePt = [number, number] | [number, number, number];
 
 export interface Element {
   id: string;
+  /** Optional driving 2D profile; frame is the sketch origin, dimensions are derived. */
+  sketch?: import('./sketch').ParametricSketch;
   kind: ElementKind;
   name: string;
   /** Semantic role (rafter, purlin, side, front …) – drives lists, colours, statics. */

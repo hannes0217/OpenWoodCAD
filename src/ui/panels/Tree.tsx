@@ -1,7 +1,7 @@
 import { useState, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { groupPath, movableRoots } from '../../core/assemblies';
 import type { EvalElement } from '../../core/evaluate';
-import { processingKey } from '../../core/references';
+import { processingKey,sketchKey } from '../../core/references';
 import { groupSelection, dissolveSelection } from '../assemblyActions';
 import { has, useT } from '../i18n';
 import { setState, useApp, useEvaluated } from '../store';
@@ -41,7 +41,7 @@ export function Tree() {
   const part=(element:EvalElement,depth:number,parentMatch=false):ReactNode=>{
     const operations=[...element.processings,...element.all.filter(p=>p.jointId)];
     if(q&&!parentMatch&&!matches(element.name,element.pos,element.role,element.materialId)&&!operations.some(p=>matches(t(`proc.${p.type}`))))return null;
-    const children=operations.map((proc,index)=>row(processingKey(element.id,proc.id),`${index+1}. ${t(`proc.${proc.type}`)}`,proc.suppressed?t('assembly.suppressed'):proc.jointId?'⋈':'',[],[],depth+1));
+    const children=[...(element.sketch?[row(sketchKey(element.id),t('sketch.title'),'✎',[],[],depth+1)]:[]),...operations.map((proc,index)=>row(processingKey(element.id,proc.id),`${index+1}. ${t(`proc.${proc.type}`)}`,proc.suppressed?t('assembly.suppressed'):proc.jointId?'⋈':'',[],[],depth+1))];
     return row(element.id,`${element.pos} · ${element.name}`,element.role&&has(`role.${element.role}`)?t(`role.${element.role}`):'',children,[element.id],depth,!!children.length);
   };
   const generator=(id:string,depth:number,parentMatch=false):ReactNode=>{
