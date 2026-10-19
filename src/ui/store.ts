@@ -7,12 +7,14 @@ import { addPoint, loadProject, saveProject } from './projects';
 import type { PlaneChoice } from './precision';
 import { readCadSettings, type CadSettings } from './cadSettings';
 import type { SelectionFilter } from './selection';
+import type { DimensionEdit } from './modelDimensions';
 
 export type Workspace = 'model' | 'drawings' | 'lists' | 'nesting' | 'shopping' | 'statics' | 'project';
 export type Tool = 'select' | 'beam' | 'rect' | 'circle' | 'poly' | 'measure' | 'cutRect' | 'cutCircle';
 export type Lang = 'de' | 'en';
 
 export interface AppState {
+  dimensionEdit:DimensionEdit|null;
   directMove: {delta:[number,number,number];axis:'x'|'y'|'z'|null;blocked?:boolean}|null;
   selectionFilter:SelectionFilter;
   visibilityOverrides:Record<string,boolean>;
@@ -99,6 +101,7 @@ function loadPrefs(): Partial<AppState> {
 const browserLang: Lang = typeof navigator !== 'undefined' && !navigator.language?.startsWith('de') ? 'en' : 'de';
 
 let state: AppState = {
+  dimensionEdit:null,
   directMove:null,
   jointPreview:null,selectionFilter:'all',visibilityOverrides:{},isolatedIds:null,contextMenu:null,contextPreview:null,
   cad: readCadSettings(null),
@@ -150,6 +153,8 @@ export function getState(): AppState {
 export function setState(patch: Partial<AppState> | ((s: AppState) => Partial<AppState>)): void {
   const p = typeof patch === 'function' ? patch(state) : patch;
   state = { ...state, ...p };
+  const edit=state.dimensionEdit;
+  if(edit&&(edit.base!==state.doc||edit.projectId!==state.projectId||edit.selection!==state.selection||state.tool!=='select'||state.workspace!=='model'||state.dialog||state.jointPreview))state={...state,dimensionEdit:null};
   if ('cad' in p || 'lang' in p || 'colorBy' in p || 'beamSection' in p || 'beamMaterial' in p || 'panelMaterial' in p || 'panelThickness' in p || 'snap' in p || 'mode' in p) {
     try {
       const { cad, lang, colorBy, beamSection, beamMaterial, panelMaterial, panelThickness, snap, mode } = state;

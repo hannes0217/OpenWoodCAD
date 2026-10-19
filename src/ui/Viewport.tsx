@@ -1,4 +1,6 @@
 import { movableRoots } from '../core/assemblies';
+import { beginDimensionEdit, modelDimensions, type ModelDimension } from './modelDimensions';
+import { fmt, t } from './i18n';
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -349,6 +351,7 @@ class SceneView implements ViewApi {
   private updateGizmo(s: AppState, ev: Evaluated) {
     const roots=movableRoots(s.doc,ev,s.selection);
     this.target=roots.length?{kind:'objects',ids:roots}:null;
+    this.overlay.traverse(o=>{if(o instanceof THREE.Line){o.geometry.dispose();for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();}});
     this.overlay.clear();
     this.overlay.visible = true;
     const groups = this.targetGroups();
@@ -358,7 +361,8 @@ class SceneView implements ViewApi {
     }
     const box = new THREE.Box3();
     for (const g of groups) box.expandByObject(g);
-    this.dimensionOverlay(box);
+    this.dimensionOverlay(box,s,ev);
+    if(s.dimensionEdit||s.jointPreview){this.gizmo.detach();return;}
     const mode=s.gizmoMode==='none'&&s.cad.navigation==='solidworks'?'translate':s.gizmoMode;
     if(mode==='none') {this.gizmo.detach();return;}
     const c = box.getCenter(new THREE.Vector3());
@@ -376,24 +380,49 @@ class SceneView implements ViewApi {
     this.gizmo.space = 'world';
   }
 
-  private dimensionOverlay(box: THREE.Box3) {
+  private dimensionOverlay(box: THREE.Box3,s:AppState,ev:Evaluated) {
     const size = box.getSize(new THREE.Vector3());
     if (size.length() < 1) return;
     const off = Math.max(size.x, size.y, size.z) * 0.08 + 40;
     const mat = new THREE.LineBasicMaterial({ color: 0x0a84ff, depthTest: false, transparent: true });
-    const addDim = (a: THREE.Vector3, b: THREE.Vector3, text: string) => {
+    const dimensions=modelDimensions(s.dimensionEdit?.candidate??s.doc,ev,s.selection);
+    const button=(dimension:ModelDimension)=>{
+      const b=document.createElement('button');b.type='button';b.className='model-dimension';
+      b.textContent=`${t(dimension.label)} ${fmt(dimension.value,2).replace(/([.,]00)$/,'')} ${dimension.unit}`;
+      b.title=t('dimension.hint');b.disabled=!!s.dimensionEdit||!!s.jointPreview;
+      b.addEventListener('pointerdown',e=>e.stopPropagation());
+      b.addEventListener('click',e=>{e.stopPropagation();beginDimensionEdit(dimension);});return b;
+    };
+    const addDim = (a: THREE.Vector3, b: THREE.Vector3, text: string,dimension?:ModelDimension) => {
       const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
       const line = new THREE.Line(geo, mat);
       line.renderOrder = 10;
       this.overlay.add(line);
-      const div = document.createElement('div');
-      div.className = 'dim-label';
-      div.textContent = text;
+      const div = dimension?button(dimension):document.createElement('div');
+      if(!dimension){div.className='dim-label';div.textContent=text;div.title=t('dimension.box');}
       const lab = new CSS2DObject(div);
       lab.position.copy(a.clone().add(b).multiplyScalar(0.5));
       this.overlay.add(lab);
     };
-    const r = (v: number) => `${Math.round(v)}`;
+    const local=dimensions.filter(d=>d.kind==='size');
+    const element=local.length?ev.elements.find(e=>e.id===local[0].object):undefined;
+    if(element){
+      const matrix=new THREE.Matrix4().set(...frameMatrix(element.frame) as Parameters<THREE.Matrix4['set']>);
+      const point=(x:number,y:number,z:number)=>new THREE.Vector3(x,y,z).applyMatrix4(matrix);
+      const {length:l,width:w,height:h}=element;
+      const edges=[[point(0,-off,0),point(l,-off,0)],[point(l+off,0,0),point(l+off,w,0)],[point(-off,0,0),point(-off,0,h)]];
+      local.forEach((d,i)=>addDim(edges[i][0],edges[i][1],'',d));
+    }
+    const card=document.createElement('div');card.className='model-dimension-card';
+    const parameters=dimensions.filter(d=>d.kind==='parameter');
+    const header=document.createElement('div');header.className='small muted';
+    header.textContent=t(parameters.length?'dimension.template':local.length?'dimension.raw':'dimension.placement');card.appendChild(header);
+    if(parameters.length){const row=document.createElement('div');row.className='model-dimension-row';parameters.forEach(d=>row.appendChild(button(d)));card.appendChild(row);}
+    const rotations=document.createElement('div');rotations.className='model-dimension-row';rotations.title=t('dimension.placement');
+    dimensions.filter(d=>d.kind==='rotation').forEach(d=>rotations.appendChild(button(d)));card.appendChild(rotations);
+    if(dimensions.length){const label=new CSS2DObject(card);label.position.set((box.min.x+box.max.x)/2,(box.min.y+box.max.y)/2,box.max.z+off*2);this.overlay.add(label);}
+    if(element||parameters.length)return;
+    const r = (v: number) => `${fmt(v,1)} mm`;
     const { min, max } = box;
     addDim(new THREE.Vector3(min.x, min.y - off, min.z), new THREE.Vector3(max.x, min.y - off, min.z), r(size.x));
     addDim(new THREE.Vector3(max.x + off, min.y, min.z), new THREE.Vector3(max.x + off, max.y, min.z), r(size.y));
@@ -585,16 +614,21 @@ export default function Viewport() {
     theme();
     media.addEventListener('change', theme);
     let direct:{transaction:MoveTransaction;selection:string[];pointerId:number;active:boolean;axis:MoveAxis;delta:Vec3|null;x:number;y:number;alt:boolean;bases:Map<string,THREE.Matrix4>}|null=null;
+    let refreshing=false;
     const refresh = () => {
+      if(refreshing)return;
+      refreshing=true;
+      try {
       const state=getState();
       if(view.gizmo.dragging){
         const tx=view.gizmoTransaction;
         if(tx&&tx.doc===state.doc&&tx.projectId===state.projectId&&state.tool==='select'&&!state.dialog&&JSON.stringify(movableRoots(state.doc,evaluated(),state.selection))===JSON.stringify(tx.roots))return;
         view.cancelGizmo();
       }
-      if(direct&&(direct.transaction.doc!==state.doc||direct.transaction.projectId!==state.projectId||state.tool!=='select'||state.dialog||state.contextMenu||direct.active&&state.selection!==direct.selection)){cancelDirect();return;}
-      view.update(state.jointPreview?.base === state.doc ? state.jointPreview.evaluation : evaluated(), state);
+      if(direct&&(direct.transaction.doc!==state.doc||direct.transaction.projectId!==state.projectId||state.tool!=='select'||state.dialog||state.contextMenu||direct.active&&state.selection!==direct.selection))cancelDirect();
+      view.update(state.dimensionEdit?.evaluation ?? (state.jointPreview?.base === state.doc ? state.jointPreview.evaluation : evaluated()), state);
       if(direct?.active)paintDirect();
+      } finally {refreshing=false;}
     };
     function paintDirect(){
       if(!direct?.active)return;
@@ -626,7 +660,7 @@ export default function Viewport() {
       if (s.tool !== prev.tool || s.workPlane !== prev.workPlane || s.workZ !== prev.workZ || s.projectId !== prev.projectId) { tools.reset(); }
       const motionOnly = s.doc === prev.doc && s.selection === prev.selection && (s.drawerOpen !== prev.drawerOpen || s.openGroups !== prev.openGroups);
       if (motionOnly) {cancelDirect();view.cancelGizmo();view.updateMotion(s);}
-      else if (s.doc !== prev.doc || s.selection !== prev.selection || s.colorBy !== prev.colorBy || s.xray !== prev.xray || s.section !== prev.section || s.showLabels !== prev.showLabels || s.gizmoMode !== prev.gizmoMode || s.tool !== prev.tool || s.snap !== prev.snap || s.issueIds !== prev.issueIds || s.visibilityOverrides!==prev.visibilityOverrides || s.isolatedIds!==prev.isolatedIds || s.contextPreview!==prev.contextPreview || s.jointPreview!==prev.jointPreview) refresh();
+      else if (s.doc !== prev.doc || s.selection !== prev.selection || s.colorBy !== prev.colorBy || s.xray !== prev.xray || s.section !== prev.section || s.showLabels !== prev.showLabels || s.gizmoMode !== prev.gizmoMode || s.tool !== prev.tool || s.snap !== prev.snap || s.issueIds !== prev.issueIds || s.visibilityOverrides!==prev.visibilityOverrides || s.isolatedIds!==prev.isolatedIds || s.contextPreview!==prev.contextPreview || s.jointPreview!==prev.jointPreview || s.dimensionEdit!==prev.dimensionEdit || s.lang!==prev.lang) refresh();
     });
     const unsubGeom = geom.subscribe(refresh);
     const ro = new ResizeObserver(() => {cancelDirect();view.cancelGizmo();view.resize();});
@@ -636,7 +670,7 @@ export default function Viewport() {
     const onDown = (e: PointerEvent) => {
       view.configureNavigation();down = { x: e.clientX, y: e.clientY };
       const state=getState();
-      if(e.button!==0||e.ctrlKey||e.shiftKey||e.metaKey||state.tool!=='select'||!state.cad.directDrag||state.cad.navigation==='classic'||state.dialog||state.jointPreview||view.gizmo.axis)return;
+      if(e.button!==0||e.ctrlKey||e.shiftKey||e.metaKey||state.tool!=='select'||!state.cad.directDrag||state.cad.navigation==='classic'||state.dialog||state.jointPreview||state.dimensionEdit||view.gizmo.axis)return;
       const hit=view.pickDetailed(e.clientX,e.clientY);if(!hit)return;
       const ev=evaluated(),selected=resolveSelection(ev,state.selection).includes(hit.id)&&movableRoots(state.doc,ev,state.selection).length?state.selection:[hit.id];
       const normal=view.camera.getWorldDirection(new THREE.Vector3());

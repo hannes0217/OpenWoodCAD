@@ -1,3 +1,4 @@
+import { DimensionEditor } from './components/DimensionEditor';
 import { useEffect, useRef, useState } from 'react';
 import { deleteSelection, duplicateSelection, newDocument, openFile, saveFile, selectAll } from './actions';
 import { geom } from './geomClient';
@@ -76,7 +77,7 @@ export default function App() {
   useEffect(() => { document.title = `${docName}${dirty ? ' •' : ''} – OpenWoodCAD`; }, [docName, dirty]);
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
   useEffect(() => { geom.start(); void bootPersistence(); }, []);
-  useEffect(()=>{if(window.matchMedia('(max-width: 900px)').matches)setState({cad:{...getState().cad,leftOpen:false,rightOpen:false}});},[]);
+  useEffect(()=>{const media=window.matchMedia('(max-width: 900px)');const compact=()=>{if(media.matches)setState({cad:{...getState().cad,leftOpen:false,rightOpen:false}});};compact();media.addEventListener('change',compact);return()=>media.removeEventListener('change',compact);},[]);
   useEffect(()=>{
     const beforeUnload=(event:BeforeUnloadEvent)=>{const status=getState().saveStatus.state;if(status==='saving'||status==='error'){event.preventDefault();event.returnValue='';}};
     window.addEventListener('beforeunload',beforeUnload);return()=>window.removeEventListener('beforeunload',beforeUnload);
@@ -169,16 +170,16 @@ export default function App() {
             <section className="center">
               <ModelToolbar />
               <div className="cad-workspace-bar">
-                <button aria-pressed={cad.leftOpen} onClick={()=>setState({cad:{...getState().cad,leftOpen:!cad.leftOpen}})} title={t('cad.toggleTree')}>{t('cad.tree')}</button>
+                <button aria-pressed={cad.leftOpen} onClick={()=>setState({cad:{...getState().cad,leftOpen:!cad.leftOpen,...(window.matchMedia('(max-width: 900px)').matches?{rightOpen:false}:{})}})} title={t('cad.toggleTree')}>{t('cad.tree')}</button>
                 <select aria-label={t('cad.navigation')} value={cad.navigation} onChange={e=>setState({cad:{...getState().cad,navigation:e.target.value as typeof cad.navigation}})}><option value="solidworks">{t('drag.navigation')}</option><option value="cad">{t('cad.navCad')}</option><option value="classic">{t('cad.navClassic')}</option></select>
                 <label className="inline"><input type="checkbox" checked={cad.directDrag} onChange={event=>setState({cad:{...getState().cad,directDrag:event.target.checked}})}/>{t('drag.direct')}</label>
                 <select className="selection-filter" aria-label={t('context.filter')} value={filter} onChange={e=>setState({selectionFilter:e.target.value as SelectionFilter})}><option value="all">{t('context.all')}</option><option value="beam">{t('context.beams')}</option><option value="panel">{t('context.panels')}</option></select>
-                <button aria-pressed={cad.rightOpen} onClick={()=>setState({cad:{...getState().cad,rightOpen:!cad.rightOpen}})} title={t('cad.toggleProperties')}>{t('cad.properties')}</button>
+                <button aria-pressed={cad.rightOpen} onClick={()=>setState({cad:{...getState().cad,rightOpen:!cad.rightOpen,...(window.matchMedia('(max-width: 900px)').matches?{leftOpen:false}:{})}})} title={t('cad.toggleProperties')}>{t('cad.properties')}</button>
               </div>
               <div className="viewport-wrap">
                 <Viewport />
                 <CadViewControls />
-                <DirectMoveHint/>
+                <DirectMoveHint/><DimensionEditor/>
                 {shown!==ev.elements.length && <button className="visibility-banner" onClick={showAllParts} title={t('context.showAll')}>{t('context.status',{shown,total:ev.elements.length})} · {t('context.showAll')}</button>}
                 <HoverTip />
                 {ev.elements.length === 0 && tool === 'select' && <StartScreen />}
