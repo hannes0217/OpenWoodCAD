@@ -1,3 +1,4 @@
+import { version } from '../../../package.json';
 import { JointWorkbench } from '../components/JointWorkbench';
 import { SketchEditor } from '../components/SketchEditor';
 import { GENERATOR_LIST } from '../../core/generators';
@@ -71,7 +72,7 @@ function AboutDialog({ onClose }: { onClose: () => void }) {
   const t = useT();
   return (
     <Modal title={t('menu.about')} onClose={onClose}>
-      <p><strong>OpenWoodCAD</strong> 0.1 – {t('app.tagline')}</p>
+      <p><strong>OpenWoodCAD</strong> {version} – {t('app.tagline')}</p>
       <p>AGPL-3.0-or-later · OpenCascade (LGPL-2.1) · three.js · React · jsPDF</p>
       <p className="muted small">{t('help.preliminary')}</p>
     </Modal>
