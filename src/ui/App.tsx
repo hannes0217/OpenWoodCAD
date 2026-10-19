@@ -16,6 +16,7 @@ import { tools } from './tools';
 import { CommandPalette } from './components/CommandPalette';
 import { CadViewControls, PanelResize } from './components/CadWorkspace';
 import { ModelContextMenu } from './components/ModelContextMenu';
+import { DirectMoveHint } from './components/DirectMoveHint';
 import { resolveSelection, visibleElements, type SelectionFilter } from './selection';
 import { showAllParts } from './viewActions';
 import { ListsView, NestingView, ShoppingView } from './views/Lists';
@@ -169,18 +170,20 @@ export default function App() {
               <ModelToolbar />
               <div className="cad-workspace-bar">
                 <button aria-pressed={cad.leftOpen} onClick={()=>setState({cad:{...getState().cad,leftOpen:!cad.leftOpen}})} title={t('cad.toggleTree')}>{t('cad.tree')}</button>
-                <select aria-label={t('cad.navigation')} value={cad.navigation} onChange={e=>setState({cad:{...getState().cad,navigation:e.target.value as 'cad'|'classic'}})}><option value="cad">{t('cad.navCad')}</option><option value="classic">{t('cad.navClassic')}</option></select>
+                <select aria-label={t('cad.navigation')} value={cad.navigation} onChange={e=>setState({cad:{...getState().cad,navigation:e.target.value as typeof cad.navigation}})}><option value="solidworks">{t('drag.navigation')}</option><option value="cad">{t('cad.navCad')}</option><option value="classic">{t('cad.navClassic')}</option></select>
+                <label className="inline"><input type="checkbox" checked={cad.directDrag} onChange={event=>setState({cad:{...getState().cad,directDrag:event.target.checked}})}/>{t('drag.direct')}</label>
                 <select className="selection-filter" aria-label={t('context.filter')} value={filter} onChange={e=>setState({selectionFilter:e.target.value as SelectionFilter})}><option value="all">{t('context.all')}</option><option value="beam">{t('context.beams')}</option><option value="panel">{t('context.panels')}</option></select>
                 <button aria-pressed={cad.rightOpen} onClick={()=>setState({cad:{...getState().cad,rightOpen:!cad.rightOpen}})} title={t('cad.toggleProperties')}>{t('cad.properties')}</button>
               </div>
               <div className="viewport-wrap">
                 <Viewport />
                 <CadViewControls />
+                <DirectMoveHint/>
                 {shown!==ev.elements.length && <button className="visibility-banner" onClick={showAllParts} title={t('context.showAll')}>{t('context.status',{shown,total:ev.elements.length})} · {t('context.showAll')}</button>}
                 <HoverTip />
                 {ev.elements.length === 0 && tool === 'select' && <StartScreen />}
                 {tool !== 'select' && <div className="hint">{toolHint} · Esc</div>}
-                {tool === 'select' && ev.elements.length > 0 && <div className="nav-help">{t(cad.navigation==='cad'?'cad.navCad':'cad.navClassic')} · {t('context.hint')}</div>}
+                {tool === 'select' && ev.elements.length > 0 && <div className="nav-help">{t(cad.navigation==='solidworks'?'drag.navigation':cad.navigation==='cad'?'cad.navCad':'cad.navClassic')} · {t(cad.directDrag&&cad.navigation!=='classic'?'drag.help':'context.hint')}</div>}
               </div>
             </section>
             {cad.rightOpen && <><PanelResize side="right"/><aside className="right"><button className="cad-panel-close" aria-label={t('cad.toggleProperties')} onClick={()=>setState({cad:{...getState().cad,rightOpen:false}})}>{t('cad.close')}</button><Properties /></aside></>}

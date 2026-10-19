@@ -13,6 +13,7 @@ export type Tool = 'select' | 'beam' | 'rect' | 'circle' | 'poly' | 'measure' | 
 export type Lang = 'de' | 'en';
 
 export interface AppState {
+  directMove: {delta:[number,number,number];axis:'x'|'y'|'z'|null;blocked?:boolean}|null;
   selectionFilter:SelectionFilter;
   visibilityOverrides:Record<string,boolean>;
   isolatedIds:string[]|null;
@@ -98,6 +99,7 @@ function loadPrefs(): Partial<AppState> {
 const browserLang: Lang = typeof navigator !== 'undefined' && !navigator.language?.startsWith('de') ? 'en' : 'de';
 
 let state: AppState = {
+  directMove:null,
   jointPreview:null,selectionFilter:'all',visibilityOverrides:{},isolatedIds:null,contextMenu:null,contextPreview:null,
   cad: readCadSettings(null),
   doc: loadAutosave() ?? emptyDocument(),
@@ -273,7 +275,7 @@ export function updateDoc(fn: (d: OwcDocument) => void): void {
 
 /** Replace the document (load/new) – clears history. */
 export function replaceDoc(doc: OwcDocument, fileName: string | null = null): void {
-  setState({ doc, past: [], future: [], selection: [], dirty: false, fileName,tool:'select',gizmoMode:'none',issueIds:[],hover:null,openGroups:{},jointPreview:null,selectionFilter:'all',visibilityOverrides:{},isolatedIds:null,contextMenu:null,contextPreview:null });
+  setState({ doc, past: [], future: [], selection: [], dirty: false, fileName,tool:'select',gizmoMode:'none',issueIds:[],hover:null,openGroups:{},jointPreview:null,selectionFilter:'all',visibilityOverrides:{},isolatedIds:null,contextMenu:null,contextPreview:null,directMove:null });
   scheduleSave();
 }
 

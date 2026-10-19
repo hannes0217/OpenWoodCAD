@@ -15,16 +15,25 @@ class ControlSurface extends EventTarget {
  style={touchAction:''};clientWidth=800;clientHeight=600;
  getRootNode(){return this;}
  setPointerCapture(){} releasePointerCapture(){}
- drag(button:number,shiftKey=false){
+ drag(button:number,shiftKey=false,ctrlKey=false){
   for(const [type,x,y] of [['pointerdown',100,100],['pointermove',150,120],['pointerup',150,120]] as const) {
    const event=new Event(type,{cancelable:true});
-   Object.assign(event,{button,shiftKey,ctrlKey:false,metaKey:false,pointerType:'mouse',pointerId:1,clientX:x,clientY:y,pageX:x,pageY:y});
+   Object.assign(event,{button,shiftKey,ctrlKey,metaKey:false,pointerType:'mouse',pointerId:1,clientX:x,clientY:y,pageX:x,pageY:y});
    this.dispatchEvent(event);
   }
  }
 }
 
 describe('CAD navigation gestures',()=>{
+ it('uses SOLIDWORKS middle-button rotation and Ctrl+middle panning without inertial drift',()=>{
+  const surface=new ControlSurface(),camera=new THREE.PerspectiveCamera(35,4/3,.1,100000);camera.up.set(0,0,1);camera.position.set(1000,-1200,800);
+  const controls=new OrbitControls(camera,surface as unknown as HTMLElement),direction=()=>camera.position.clone().sub(controls.target).normalize();
+  configureCadNavigation(controls,'solidworks',false);expect(controls.enableDamping).toBe(false);expect(controls.zoomToCursor).toBe(true);
+  const before=direction();surface.drag(1);expect(direction().distanceTo(before)).toBeGreaterThan(.01);expect(controls.target.length()).toBeLessThan(1e-8);
+  const orbit=direction();surface.drag(1,false,true);expect(controls.target.length()).toBeGreaterThan(1);expect(direction().distanceTo(orbit)).toBeLessThan(1e-8);
+  const position=camera.position.clone();surface.drag(0);expect(camera.position.distanceTo(position)).toBeLessThan(1e-8);
+  configureCadNavigation(controls,'solidworks',true);const drawing=direction();surface.drag(1);expect(direction().distanceTo(drawing)).toBeLessThan(1e-8);controls.dispose();
+ });
  it('reserves left drag for selection, pans with middle, orbits with Shift+middle and suppresses orbit while drawing',()=>{
   const surface=new ControlSurface(),camera=new THREE.PerspectiveCamera(35,4/3,.1,100000);camera.up.set(0,0,1);camera.position.set(1000,-1200,800);
   const controls=new OrbitControls(camera,surface as unknown as HTMLElement);

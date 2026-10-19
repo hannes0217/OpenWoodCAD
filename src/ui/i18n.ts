@@ -1,4 +1,5 @@
 import { drawingDe, drawingEn } from './i18n-drawing';
+import { dragDe,dragEn } from './i18n-drag';
 import { assemblyDe, assemblyEn } from './i18n-assembly';
 import { jointEditDe, jointEditEn } from './i18n-joint-edit';
 import type { Msg } from '../core/model';
@@ -134,6 +135,7 @@ Object.assign(de,precisionDe);Object.assign(en,precisionEn);
 Object.assign(de,contextDe);Object.assign(en,contextEn);
 
 const dicts: Record<Lang, Dict> = { de, en };
+Object.assign(de,dragDe);Object.assign(en,dragEn);
 Object.assign(de,assemblyDe);Object.assign(en,assemblyEn);
 
 /** Independent dictionary snapshot for coverage checks, without German fallback. */

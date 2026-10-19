@@ -31,7 +31,7 @@ export function ModelToolbar() {
         <span className="tb-group-name">{t('cad.select')}</span>
         <TB on={s.tool==='select' && s.gizmoMode==='none'} onClick={()=>setState({tool:'select',gizmoMode:'none'})} icon="cursor" tip={t('cad.select')} />
         <TB on={s.tool === 'select' && s.gizmoMode === 'translate'} onClick={() => setState({ tool: 'select', gizmoMode: 'translate' })} icon="✥" label={de ? 'Verschieben' : 'Move'} tip={de ? 'Auswählen und an den Pfeilen am Objekt ziehen (W)' : 'Select and drag the arrows on the object (W)'} />
-        <TB on={s.tool === 'select' && s.gizmoMode === 'rotate'} onClick={() => setState({ tool: 'select', gizmoMode: 'rotate' })} icon="⟳" label={de ? 'Drehen' : 'Rotate'} tip={de ? 'Um die senkrechte Achse drehen, rastet in 15°-Schritten (R)' : 'Rotate about the vertical axis in 15° steps (R)'} />
+        <TB on={s.tool === 'select' && s.gizmoMode === 'rotate'} onClick={() => setState({ tool: 'select', gizmoMode: 'rotate' })} icon="⟳" label={t('cad.rotate')} tip={t('drag.rotateHelp')} />
         <button className="tb" aria-haspopup="menu" disabled={!pair.length} onClick={event=>{
           const rect=event.currentTarget.getBoundingClientRect();
           setState({contextMenu:{x:rect.left,y:rect.bottom,ids:[],source:'selection'},contextPreview:null,hover:null});
@@ -104,7 +104,7 @@ export function ModelToolbar() {
           <MaterialSelect value={s.beamMaterial} catalog={ev.catalog} category="timber" onChange={(m) => setState({ beamMaterial: m })} />
         </div>
       )}
-      <PrecisionControls/>
+      {s.tool!=='select'&&<PrecisionControls/>}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { movableRoots, objectWorldFrame, setObjectWorldFrame } from '../core/assemblies';
+import { movableRoots } from '../core/assemblies';
 import { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
@@ -6,16 +6,17 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import { CSS2DObject, CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { findMaterial } from '../core/catalog';
 import type { EvalElement, Evaluated } from '../core/evaluate';
-import { frameMatrix, rotateFrame, type Frame, type Vec3 } from '../core/math';
+import { frameMatrix, type Vec3 } from '../core/math';
 import { geom, geomSig } from './geomClient';
 import { motionMatrix, motionOpenness } from './motion';
 import { orbitCamera } from './orbit';
 import type { SnapEdge } from './precision';
 import { tools, type ViewApi } from './tools';
-import { getState, setState, subscribe, evaluated, updateDoc, type AppState } from './store';
+import { getState, setState, subscribe, evaluated, type AppState } from './store';
 import { changeProjection, fitCamera, resizeCamera, VIEW_DIRECTIONS, type CadCamera, type ViewName } from './cameraMath';
 import { configureCadNavigation } from './navigation';
 import { pickPartIds, resolveSelection, visibleElements } from './selection';
+import { beginDirectMove, commitDirectMove, commitRigidMove, directMoveDelta, type MoveTransaction, type MoveAxis } from './directMove';
 export type { ViewName } from './cameraMath';
 
 type ElementMotion = NonNullable<import('../core/model').Element['motion']>;
@@ -56,10 +57,13 @@ class SceneView implements ViewApi {
   proxy = new THREE.Object3D();
   target: { kind: 'objects'; ids: string[] } | null = null;
   dragStart = new THREE.Vector3();
-  dragStartRot = 0;
+  dragStartRotation = new THREE.Quaternion();
+  gizmoTransaction:MoveTransaction|null=null;
+  gizmoCancelled=false;
+  cancelInteraction:(()=>void)|null=null;
   dragBase = new Map<THREE.Object3D, THREE.Matrix4>();
   gizmoBusy = false;
-  onMove: ((t: { kind: 'objects'; ids: string[] }, delta: Vec3, rotZ: number, pivot: Vec3) => void) | null = null;
+  onMove: ((transaction:MoveTransaction,delta:Vec3,rotation:THREE.Quaternion) => void) | null = null;
 
   constructor(private host: HTMLDivElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
@@ -103,20 +107,25 @@ class SceneView implements ViewApi {
       this.controls.enabled = !dragging;
       if (dragging) {
         this.dragStart.copy(this.proxy.position);
-        this.dragStartRot = this.proxy.rotation.z;
+        this.dragStartRotation.copy(this.proxy.quaternion);
+        this.gizmoCancelled=false;
+        const s=getState(),anchor:Vec3=[this.dragStart.x,this.dragStart.y,this.dragStart.z];
+        this.gizmoTransaction=this.target?beginDirectMove(s.doc,evaluated(),this.target.ids,s.projectId,anchor,[0,0,1],{origin:[0,0,1],dir:[0,0,-1]}):null;
         this.dragBase.clear();
         for (const g of this.targetGroups()) this.dragBase.set(g, g.matrix.clone());
       } else {
         const d = this.proxy.position.clone().sub(this.dragStart);
-        const rz = this.proxy.rotation.z - this.dragStartRot;
-        if (this.target && (d.length() > 0.01 || Math.abs(rz) > 1e-6)) this.onMove?.(this.target, [d.x, d.y, d.z], rz, [this.dragStart.x, this.dragStart.y, this.dragStart.z]);
+        const rotation=this.proxy.quaternion.clone().multiply(this.dragStartRotation.clone().invert());
+        const tx=this.gizmoTransaction;this.gizmoTransaction=null;
+        if(tx&&!this.gizmoCancelled&&(d.length()>0.01||rotation.angleTo(new THREE.Quaternion())>1e-6))this.onMove?.(tx,[d.x,d.y,d.z],rotation);
+        this.update(evaluated(),getState());
         setTimeout(() => { this.gizmoBusy = false; }, 0);
       }
     });
     this.gizmo.addEventListener('objectChange', () => {
       const d = this.proxy.position.clone().sub(this.dragStart);
-      const rz = this.proxy.rotation.z - this.dragStartRot;
-      const rot = new THREE.Matrix4().makeRotationZ(rz);
+      const rotation=this.proxy.quaternion.clone().multiply(this.dragStartRotation.clone().invert());
+      const rot = new THREE.Matrix4().makeRotationFromQuaternion(rotation);
       const toO = new THREE.Matrix4().makeTranslation(-this.dragStart.x, -this.dragStart.y, -this.dragStart.z);
       const back = new THREE.Matrix4().makeTranslation(this.dragStart.x + d.x, this.dragStart.y + d.y, this.dragStart.z + d.z);
       const m = back.multiply(rot).multiply(toO);
@@ -144,6 +153,10 @@ class SceneView implements ViewApi {
 
   configureNavigation() {
     configureCadNavigation(this.controls,getState().cad.navigation,getState().tool!=='select');
+  }
+  cancelGizmo(){
+    if(!this.gizmo.dragging)return;
+    this.gizmoCancelled=true;this.gizmo.reset();this.gizmo.dragging=false;this.controls.enabled=true;this.gizmoBusy=false;
   }
 
   configureProjection() {
@@ -346,16 +359,17 @@ class SceneView implements ViewApi {
     const box = new THREE.Box3();
     for (const g of groups) box.expandByObject(g);
     this.dimensionOverlay(box);
-    if(s.gizmoMode==='none') {this.gizmo.detach();return;}
+    const mode=s.gizmoMode==='none'&&s.cad.navigation==='solidworks'?'translate':s.gizmoMode;
+    if(mode==='none') {this.gizmo.detach();return;}
     const c = box.getCenter(new THREE.Vector3());
-    if(this.target.ids.length===1){const frame=objectWorldFrame(s.doc,this.target.ids[0]);c.set(...frame.o);}else c.z=box.min.z;
+    // Keep the triad in the visible selection, rather than at a distant datum.
     this.proxy.position.copy(c);
     this.proxy.rotation.set(0, 0, 0);
     this.proxy.updateMatrixWorld();
     this.gizmo.attach(this.proxy);
-    this.gizmo.setMode(s.gizmoMode);
-    this.gizmo.showX = s.gizmoMode === 'translate';
-    this.gizmo.showY = s.gizmoMode === 'translate';
+    this.gizmo.setMode(mode);
+    this.gizmo.showX = true;
+    this.gizmo.showY = true;
     this.gizmo.showZ = true;
     this.gizmo.setTranslationSnap(s.snap || null);
     this.gizmo.setRotationSnap(THREE.MathUtils.degToRad(15));
@@ -529,34 +543,28 @@ export function animateOpen(group: string, to: number) {
 }
 
 /** Commit a gizmo move/rotation to the document. */
-function moveTarget(target: { kind: 'objects'; ids: string[] }, d: Vec3, rotZ: number, pivot: Vec3) {
-  const snap = getState().snap || 1;
-  const r = (v: number) => Math.round(v / snap) * snap;
-  const delta: Vec3 = [r(d[0]), r(d[1]), r(d[2])];
-  updateDoc((doc) => {
-    const apply = (f: Frame): Frame => {
-      let out = rotZ ? rotateFrame(f, pivot, [0, 0, 1], rotZ) : f;
-      out = { ...out, o: [out.o[0] + delta[0], out.o[1] + delta[1], out.o[2] + delta[2]] };
-      return out;
-    };
-    for(const key of target.ids)setObjectWorldFrame(doc,key,apply(objectWorldFrame(doc,key)));
-  });
+function moveTarget(transaction:MoveTransaction,d:Vec3,quaternion:THREE.Quaternion) {
+  const snap=getState().snap;
+  const delta=d.map(value=>snap>0?Math.round(value/snap)*snap:value) as Vec3;
+  const size=Math.hypot(quaternion.x,quaternion.y,quaternion.z);
+  const rotation=size>1e-10?{axis:[quaternion.x/size,quaternion.y/size,quaternion.z/size] as Vec3,angle:2*Math.atan2(size,quaternion.w)}:undefined;
+  commitRigidMove(transaction,delta,rotation);
 }
-
 let active: SceneView | null = null;
 
 export function viewportOrbit(yaw: number, pitch: number) {
   if (!active || getState().tool !== 'select') return;
+  active.cancelInteraction?.();
   orbitCamera(active.camera, active.controls.target, yaw, pitch);
   active.controls.update(); active.render();
 }
 
 export function viewportFit(view: ViewName = 'iso') {
-  if(active) active.fit(view);else requestAnimationFrame(()=>active?.fit(view));
+  if(active){active.cancelInteraction?.();active.fit(view);}else requestAnimationFrame(()=>active?.fit(view));
 }
 
 export function viewportFitIds(ids: string[]) {
-  setTimeout(() => active?.fitIds(ids), 50);
+  setTimeout(() => {active?.cancelInteraction?.();active?.fitIds(ids);}, 50);
 }
 
 export function viewportSnapshot(): string | null {
@@ -576,7 +584,35 @@ export default function Viewport() {
     const theme = () => view.applyTheme(document.documentElement.dataset.theme === 'dark' || (document.documentElement.dataset.theme !== 'light' && media.matches));
     theme();
     media.addEventListener('change', theme);
-    const refresh = () => { const state=getState(); view.update(state.jointPreview?.base === state.doc ? state.jointPreview.evaluation : evaluated(), state); };
+    let direct:{transaction:MoveTransaction;selection:string[];pointerId:number;active:boolean;axis:MoveAxis;delta:Vec3|null;x:number;y:number;alt:boolean;bases:Map<string,THREE.Matrix4>}|null=null;
+    const refresh = () => {
+      const state=getState();
+      if(view.gizmo.dragging){
+        const tx=view.gizmoTransaction;
+        if(tx&&tx.doc===state.doc&&tx.projectId===state.projectId&&state.tool==='select'&&!state.dialog&&JSON.stringify(movableRoots(state.doc,evaluated(),state.selection))===JSON.stringify(tx.roots))return;
+        view.cancelGizmo();
+      }
+      if(direct&&(direct.transaction.doc!==state.doc||direct.transaction.projectId!==state.projectId||state.tool!=='select'||state.dialog||state.contextMenu||direct.active&&state.selection!==direct.selection)){cancelDirect();return;}
+      view.update(state.jointPreview?.base === state.doc ? state.jointPreview.evaluation : evaluated(), state);
+      if(direct?.active)paintDirect();
+    };
+    function paintDirect(){
+      if(!direct?.active)return;
+      const ids=new Set(resolveSelection(evaluated(),direct.transaction.roots));
+      for(const object of view.root.children)if(ids.has(object.userData.elementId)){
+        const id=object.userData.elementId as string;
+        if(!direct.bases.has(id))direct.bases.set(id,object.matrix.clone());
+        object.matrix.copy(new THREE.Matrix4().makeTranslation(...(direct.delta??[0,0,0])).multiply(direct.bases.get(id)!));
+      }
+      view.gizmo.detach();view.overlay.visible=false;view.dirty=true;
+    }
+    function cancelDirect(){
+      if(!direct)return;
+      const pointerId=direct.pointerId;direct=null;down=null;
+      view.renderer.domElement.style.cursor='';view.controls.enabled=true;view.configureNavigation();
+      if(view.renderer.domElement.hasPointerCapture(pointerId))view.renderer.domElement.releasePointerCapture(pointerId);
+      setState({directMove:null});refresh();
+    }
     view.configureProjection();view.configureNavigation();
     refresh();
     let last = getState();
@@ -584,19 +620,31 @@ export default function Viewport() {
       const s = getState();
       const prev = last;
       last = s;
+      if(s.projectId!==prev.projectId||s.cad.directDrag!==prev.cad.directDrag||s.cad.navigation!==prev.cad.navigation||s.cad.projection!==prev.cad.projection){cancelDirect();view.cancelGizmo();}
       if(s.cad.projection!==prev.cad.projection) view.configureProjection();
-      if(s.cad.navigation!==prev.cad.navigation || s.tool!==prev.tool) view.configureNavigation();
+      if(s.cad.navigation!==prev.cad.navigation || s.tool!==prev.tool) {view.configureNavigation();refresh();}
       if (s.tool !== prev.tool || s.workPlane !== prev.workPlane || s.workZ !== prev.workZ || s.projectId !== prev.projectId) { tools.reset(); }
       const motionOnly = s.doc === prev.doc && s.selection === prev.selection && (s.drawerOpen !== prev.drawerOpen || s.openGroups !== prev.openGroups);
-      if (motionOnly) view.updateMotion(s);
+      if (motionOnly) {cancelDirect();view.cancelGizmo();view.updateMotion(s);}
       else if (s.doc !== prev.doc || s.selection !== prev.selection || s.colorBy !== prev.colorBy || s.xray !== prev.xray || s.section !== prev.section || s.showLabels !== prev.showLabels || s.gizmoMode !== prev.gizmoMode || s.tool !== prev.tool || s.snap !== prev.snap || s.issueIds !== prev.issueIds || s.visibilityOverrides!==prev.visibilityOverrides || s.isolatedIds!==prev.isolatedIds || s.contextPreview!==prev.contextPreview || s.jointPreview!==prev.jointPreview) refresh();
     });
     const unsubGeom = geom.subscribe(refresh);
-    const ro = new ResizeObserver(() => view.resize());
+    const ro = new ResizeObserver(() => {cancelDirect();view.cancelGizmo();view.resize();});
     ro.observe(host.current!);
     let down: { x: number; y: number } | null = null;
     const el = view.renderer.domElement;
-    const onDown = (e: PointerEvent) => { view.configureNavigation();down = { x: e.clientX, y: e.clientY }; };
+    const onDown = (e: PointerEvent) => {
+      view.configureNavigation();down = { x: e.clientX, y: e.clientY };
+      const state=getState();
+      if(e.button!==0||e.ctrlKey||e.shiftKey||e.metaKey||state.tool!=='select'||!state.cad.directDrag||state.cad.navigation==='classic'||state.dialog||state.jointPreview||view.gizmo.axis)return;
+      const hit=view.pickDetailed(e.clientX,e.clientY);if(!hit)return;
+      const ev=evaluated(),selected=resolveSelection(ev,state.selection).includes(hit.id)&&movableRoots(state.doc,ev,state.selection).length?state.selection:[hit.id];
+      const normal=view.camera.getWorldDirection(new THREE.Vector3());
+      const transaction=beginDirectMove(state.doc,ev,selected,state.projectId,hit.point,[normal.x,normal.y,normal.z],view.ray(e.clientX,e.clientY));
+      if(!transaction)return;
+      direct={transaction,selection:selected,pointerId:e.pointerId,active:false,axis:null,delta:[0,0,0],x:e.clientX,y:e.clientY,alt:e.altKey,bases:new Map()};
+      view.controls.enabled=false;el.setPointerCapture(e.pointerId);e.preventDefault();e.stopImmediatePropagation();
+    };
     let rightDown:{x:number;y:number}|null=null;
     const onRightDown=(e:PointerEvent)=>{if(e.button===2)rightDown={x:e.clientX,y:e.clientY};};
     const onContext=(e:MouseEvent)=>{
@@ -608,6 +656,12 @@ export default function Viewport() {
       setState({contextMenu:{x:e.clientX,y:e.clientY,ids},contextPreview:null,hover:null,...(ids[0] && !alreadySelected.includes(ids[0])?{selection:[ids[0]]}:{})});
     };
     const onUp = (e: PointerEvent) => {
+      if(direct&&direct.pointerId===e.pointerId){
+        e.stopImmediatePropagation();const finished=direct;direct=null;
+        if(el.hasPointerCapture(e.pointerId))el.releasePointerCapture(e.pointerId);
+        el.style.cursor='';view.controls.enabled=true;view.configureNavigation();setState({directMove:null});
+        if(finished.active){down=null;lastClick={id:'',t:0};if(finished.delta)commitDirectMove(finished.transaction,finished.delta);refresh();return;}
+      }
       if (view.gizmoBusy || getState().dialog) { down = null; return; }
       if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4 || e.button !== 0) {down=null;return;}
       down = null;
@@ -636,6 +690,17 @@ export default function Viewport() {
     };
     let hoverT = 0;
     const onMove = (e: PointerEvent) => {
+      if(direct&&direct.pointerId===e.pointerId){
+        direct.x=e.clientX;direct.y=e.clientY;direct.alt=e.altKey;
+        if(!direct.active&&down&&Math.hypot(e.clientX-down.x,e.clientY-down.y)>4){
+          direct.active=true;setState({selection:direct.selection,hover:null,contextPreview:null});el.style.cursor='grabbing';
+        }
+        if(direct.active){
+          direct.delta=directMoveDelta(direct.transaction,view.ray(e.clientX,e.clientY),direct.axis,e.altKey?0:getState().snap);
+          paintDirect();setState({directMove:{delta:direct.delta??[0,0,0],axis:direct.axis,blocked:direct.delta===null}});
+        }
+        e.stopImmediatePropagation();return;
+      }
       if(getState().contextMenu)return;
       if (getState().tool !== 'select') { if (!e.buttons) tools.move(e.clientX, e.clientY); return; }
       if (e.buttons) { if (getState().hover) setState({ hover: null }); return; }
@@ -645,17 +710,34 @@ export default function Viewport() {
       const id = view.pick(e.clientX, e.clientY);
       const r = el.getBoundingClientRect();
       const cur = getState().hover;
+      el.style.cursor=getState().cad.directDrag&&getState().cad.navigation!=='classic'&&id?'grab':'';
       if (!id) { if (cur) setState({ hover: null }); return; }
       if (!cur || cur.id !== id || Math.abs(cur.x - (e.clientX - r.left)) > 2 || Math.abs(cur.y - (e.clientY - r.top)) > 2) setState({ hover: { id, x: e.clientX - r.left, y: e.clientY - r.top } });
     };
-    const onLeave = () => setState({ hover: null });
-    view.onMove = (target, delta, rotZ, pivot) => moveTarget(target, delta, rotZ, pivot);
+    const onLeave = () => {if(!direct)el.style.cursor='';setState({ hover: null });};
+    const onMoveKey=(e:KeyboardEvent)=>{
+      if(e.key==='Escape'&&view.gizmo.dragging){e.preventDefault();e.stopImmediatePropagation();down=null;view.cancelGizmo();refresh();return;}
+      if(!direct)return;
+      if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();cancelDirect();return;}
+      if(!direct.active)return;
+      const key=e.key.toLowerCase();if(['x','y','z'].includes(key)&&e.type==='keydown'&&!e.repeat)direct.axis=direct.axis===key?null:key as MoveAxis;
+      else if(e.key!=='Alt')return;
+      direct.alt=e.altKey;direct.delta=directMoveDelta(direct.transaction,view.ray(direct.x,direct.y),direct.axis,direct.alt?0:getState().snap);
+      paintDirect();setState({directMove:{delta:direct.delta??[0,0,0],axis:direct.axis,blocked:direct.delta===null}});e.preventDefault();e.stopImmediatePropagation();
+    };
+    const onLost=(e:PointerEvent)=>{if(direct?.pointerId===e.pointerId)cancelDirect();if(e.type==='pointercancel'){view.cancelGizmo();refresh();}};
+    const onBlur=()=>{cancelDirect();view.cancelGizmo();refresh();};
+    view.cancelInteraction=onBlur;
+    view.onMove = moveTarget;
     tools.attach(view);
     el.addEventListener('pointerdown', onDown,true);
     el.addEventListener('pointerdown',onRightDown,true);
     el.addEventListener('contextmenu',onContext);
-    el.addEventListener('pointerup', onUp);
-    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', onUp,true);
+    el.addEventListener('pointermove', onMove,true);
+    el.addEventListener('pointercancel',onLost);
+    el.addEventListener('lostpointercapture',onLost);
+    window.addEventListener('keydown',onMoveKey,true);window.addEventListener('keyup',onMoveKey,true);window.addEventListener('blur',onBlur);
     el.addEventListener('pointerleave', onLeave);
     return () => {
       unsub();
@@ -665,8 +747,11 @@ export default function Viewport() {
       el.removeEventListener('pointerdown', onDown,true);
       el.removeEventListener('pointerdown',onRightDown,true);
       el.removeEventListener('contextmenu',onContext);
-      el.removeEventListener('pointerup', onUp);
-      el.removeEventListener('pointermove', onMove);
+      cancelDirect();
+      el.removeEventListener('pointerup', onUp,true);
+      el.removeEventListener('pointermove', onMove,true);
+      el.removeEventListener('pointercancel',onLost);el.removeEventListener('lostpointercapture',onLost);
+      window.removeEventListener('keydown',onMoveKey,true);window.removeEventListener('keyup',onMoveKey,true);window.removeEventListener('blur',onBlur);
       el.removeEventListener('pointerleave', onLeave);
       view.dispose();
       if (active === view) active = null;
