@@ -1,0 +1,260 @@
+{
+ "format": "openwoodcad",
+ "version": 6,
+ "project": {
+  "name": "P1 Holzrahmen 2000",
+  "site": {
+   "altitude": 300,
+   "snowZone": "2",
+   "windZone": 2,
+   "terrain": "inland"
+  }
+ },
+ "elements": [
+  {
+   "id": "b_mvgbebscehj7cb",
+   "kind": "beam",
+   "name": "Schwelle",
+   "role": "beam",
+   "frame": {
+    "o": [
+     0,
+     0,
+     0
+    ],
+    "x": [
+     1,
+     0,
+     0
+    ],
+    "y": [
+     0,
+     0,
+     1
+    ],
+    "z": [
+     0,
+     -1,
+     0
+    ]
+   },
+   "length": 2000,
+   "width": 120,
+   "height": 60,
+   "materialId": "kvh_c24",
+   "processings": []
+  },
+  {
+   "id": "b_mvgbek89wocbnf",
+   "kind": "beam",
+   "name": "Rähm",
+   "role": "beam",
+   "frame": {
+    "o": [
+     0,
+     0,
+     2280
+    ],
+    "x": [
+     1,
+     0,
+     0
+    ],
+    "y": [
+     0,
+     0,
+     1
+    ],
+    "z": [
+     0,
+     -1,
+     0
+    ]
+   },
+   "length": 2000,
+   "width": 120,
+   "height": 60,
+   "materialId": "kvh_c24",
+   "processings": []
+  },
+  {
+   "id": "b_mvgbeqt8b4qplk",
+   "kind": "beam",
+   "name": "Ständer links",
+   "role": "beam",
+   "frame": {
+    "o": [
+     120,
+     0,
+     -3.67394039744206e-15
+    ],
+    "x": [
+     6.123233995736766e-17,
+     0,
+     1
+    ],
+    "y": [
+     -1,
+     0,
+     6.123233995736766e-17
+    ],
+    "z": [
+     0,
+     -1,
+     0
+    ]
+   },
+   "length": 2400,
+   "width": 120,
+   "height": 60,
+   "materialId": "kvh_c24",
+   "processings": []
+  },
+  {
+   "id": "b_mvgbez5j848hab",
+   "kind": "beam",
+   "name": "Ständer rechts",
+   "role": "beam",
+   "frame": {
+    "o": [
+     2000,
+     0,
+     -3.67394039744206e-15
+    ],
+    "x": [
+     6.123233995736766e-17,
+     0,
+     1
+    ],
+    "y": [
+     -1,
+     0,
+     6.123233995736766e-17
+    ],
+    "z": [
+     0,
+     -1,
+     0
+    ]
+   },
+   "length": 2400,
+   "width": 120,
+   "height": 60,
+   "materialId": "kvh_c24",
+   "processings": []
+  },
+  {
+   "id": "b_mvgbeztuucu6w9",
+   "kind": "beam",
+   "name": "Ständer innen links",
+   "role": "beam",
+   "frame": {
+    "o": [
+     746,
+     0,
+     120
+    ],
+    "x": [
+     6.123233995736766e-17,
+     0,
+     1
+    ],
+    "y": [
+     -1,
+     0,
+     6.123233995736766e-17
+    ],
+    "z": [
+     0,
+     -1,
+     0
+    ]
+   },
+   "length": 2160,
+   "width": 120,
+   "height": 60,
+   "materialId": "kvh_c24",
+   "processings": []
+  },
+  {
+   "id": "b_mvgbf0jxeixo21",
+   "kind": "beam",
+   "name": "Ständer innen rechts",
+   "role": "beam",
+   "frame": {
+    "o": [
+     1374,
+     0,
+     120
+    ],
+    "x": [
+     6.123233995736766e-17,
+     0,
+     1
+    ],
+    "y": [
+     -1,
+     0,
+     6.123233995736766e-17
+    ],
+    "z": [
+     0,
+     -1,
+     0
+    ]
+   },
+   "length": 2160,
+   "width": 120,
+   "height": 60,
+   "materialId": "kvh_c24",
+   "processings": []
+  }
+ ],
+ "joints": [
+  {
+   "id": "j_mvgbf7o5l2dztp",
+   "type": "lap",
+   "a": "b_mvgbeqt8b4qplk",
+   "b": "b_mvgbebscehj7cb",
+   "params": {}
+  },
+  {
+   "id": "j_mvgbffe0qay5r5",
+   "type": "lap",
+   "a": "b_mvgbeqt8b4qplk",
+   "b": "b_mvgbek89wocbnf",
+   "params": {}
+  },
+  {
+   "id": "j_mvgbfgjzaa9h29",
+   "type": "lap",
+   "a": "b_mvgbez5j848hab",
+   "b": "b_mvgbebscehj7cb",
+   "params": {}
+  },
+  {
+   "id": "j_mvgbfhq7n356v9",
+   "type": "lap",
+   "a": "b_mvgbez5j848hab",
+   "b": "b_mvgbek89wocbnf",
+   "params": {}
+  }
+ ],
+ "generators": [],
+ "groups": [],
+ "hardware": [],
+ "prices": {},
+ "customMaterials": [],
+ "settings": {
+  "kerf": 4,
+  "sheetTrim": 10,
+  "timberAllowance": 20,
+  "wasteFactor": 0.1,
+  "currency": "EUR",
+  "labourRate": 55,
+  "overhead": 0.15,
+  "profit": 0.1,
+  "vat": 0.19
+ },
+ "statics": []
+}

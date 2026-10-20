@@ -1,3 +1,6 @@
+import { beginAlignment } from '../faceAlignment';
+import { movementScope } from '../movementScope';
+import { visibleElements } from '../selection';
 import { PrecisionControls } from '../components/PrecisionControls';
 import { useState } from 'react';
 import { MaterialSelect, NumberInput } from '../components/Field';
@@ -48,6 +51,7 @@ export function ModelToolbar() {
       </div>
       <div className="tb-group">
         <span className="tb-group-name">{t('cad.modify')}</span>
+        <TB disabled={!s.selection.length||!!s.dialog} onClick={beginAlignment} icon="▣" label={t('align.title')} tip={t('align.title')}/>
         <TB on={s.tool === 'cutRect'} onClick={() => toggle('cutRect')} icon="⬚" tip={de ? 'Rechteckiger Ausschnitt in einer Platte (auf ihre Fläche zeichnen)' : 'Rectangular cut-out (draw on the panel face)'} />
         <TB on={s.tool === 'cutCircle'} onClick={() => toggle('cutCircle')} icon="⊙" tip={de ? 'Runder Ausschnitt / Bohrung in einer Platte' : 'Round cut-out / hole in a panel'} />
         <TB on={s.tool === 'measure'} onClick={() => toggle('measure')} icon="📏" tip={de ? 'Abstand zwischen zwei Punkten messen (M)' : 'Measure distance (M)'} />
@@ -55,7 +59,7 @@ export function ModelToolbar() {
       </div>
       <div className="tb-group">
         <span className="tb-group-name">{t('cad.views')}</span>
-        <TB onClick={() => viewportFit('iso')} icon="◰" tip={de ? 'Alles zeigen (F)' : 'Zoom all (F)'} />
+        <TB onClick={() => viewportFit()} icon="◰" tip={de ? 'Alles zeigen (F)' : 'Zoom all (F)'} />
         <div className="menu">
           <TB on={viewOpen} onClick={() => setViewOpen(!viewOpen)} icon="👁" label={de ? 'Darstellung' : 'Display'} tip={de ? 'Schnitt, Röntgen, Farben, Positionsnummern' : 'Section, x-ray, colours, numbers'} />
           {viewOpen && (
@@ -113,15 +117,18 @@ export function ModelToolbar() {
 export function HoverTip() {
   const hover = useApp((s) => s.hover);
   const lang = useApp((s) => s.lang);
+  const state=useApp(s=>s),t=useT();
   const ev = useEvaluated();
   if (!hover) return null;
   const e = ev.elements.find((x) => x.id === hover.id);
   if (!e) return null;
+  const scope=movementScope(state.doc,ev,state.selection,visibleElements(ev.elements,state).map(e=>e.id),hover.id);
   const r = (v: number) => Math.round(v * 10) / 10;
   return (
     <div className="hover-tip" style={{ left: hover.x + 14, top: hover.y + 14 }}>
       <strong>Pos. {e.pos} · {e.name}</strong>
       <span>{r(e.length)} × {r(e.width)} × {r(e.height)} mm</span>
+      {scope.ids.length>0&&<span>{t(`scope.${scope.kind}`)} · {t('scope.count',{n:scope.ids.length})}{scope.hidden>0?` · ${t('scope.hidden',{n:scope.hidden})}`:''}</span>}
       {e.motion && <span className="muted">{lang === 'de' ? 'Doppelklick: öffnen/schließen' : 'Double-click: open/close'}</span>}
     </div>
   );

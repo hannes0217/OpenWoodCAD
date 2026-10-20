@@ -59,7 +59,7 @@ export function ModelContextMenu() {
   {button('menu.delete', deleteSelection, !has, 'Del')}
   <div className="context-section">{t('context.view')}</div>
   {button('context.showAll', showAllParts)}
-  {button('view.fit', () => viewportFit('iso'), false, 'F')}
+  {button('view.fit', () => viewportFit(), false, 'F')}
   {menu.source !== 'selection' && <><div className="context-section" title={t('context.pickHint')}>{t('context.pick')}</div>
   <div className="context-candidates">
    {!menu.ids.length && <p className="muted pad">{t('context.noHits')}</p>}

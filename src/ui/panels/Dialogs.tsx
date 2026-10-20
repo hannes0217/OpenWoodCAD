@@ -1,3 +1,5 @@
+import { AlignmentEditor } from '../components/AlignmentEditor';
+import { PartPlacementEditor } from '../components/PartPlacementEditor';
 import { version } from '../../../package.json';
 import { JointWorkbench } from '../components/JointWorkbench';
 import { SketchEditor } from '../components/SketchEditor';
@@ -31,6 +33,8 @@ export function Dialogs() {
   const dialog = useApp((s) => s.dialog);
   const close = () => setState({ dialog: null });
   if (!dialog) return null;
+  if(dialog.type==='align')return <AlignmentEditor/>;
+  if(dialog.type==='partPlacement')return <PartPlacementEditor key={dialog.id} id={dialog.id}/>;
   if(dialog.type==='sketch')return <SketchEditor key={dialog.id??'new'} id={dialog.id}/>;
   if (dialog.type === 'insert') return <InsertDialog onClose={close} />;
   if (dialog.type === 'joint') return <JointWorkbench a={dialog.a} b={dialog.b} id={dialog.id} onClose={close} />;

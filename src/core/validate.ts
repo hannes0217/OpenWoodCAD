@@ -1,3 +1,4 @@
+import { validPartOffsets } from './partOffsets';
 import { FORMAT, FORMAT_VERSION, emptyDocument, type DrawingView, type Element, type GeneratorInstance, type Joint, type OwcDocument } from './model';
 
 import { evaluate } from './evaluate';
@@ -30,6 +31,8 @@ const MIGRATIONS: Record<number, (d: Record<string, unknown>) => void> = {
   3: () => {},
   // v5 adds optional driving line profiles to free panel elements.
   4: () => {},
+  // v6 adds optional generator-local part translations.
+  5: () => {},
   // version 0 (pre-release): elements had `outline` as {x,y} objects
   0: (d) => {
     for (const e of (d.elements as Record<string, unknown>[]) ?? []) {
@@ -70,7 +73,8 @@ export function validateDocument(raw: unknown): ValidationResult {
   const generators: GeneratorInstance[] = [];
   for (const [i, g] of ((Array.isArray(d.generators) ? d.generators : []) as Record<string, unknown>[]).entries()) {
     if (!g || typeof g.id !== 'string' || typeof g.type !== 'string' || !isFrame(g.frame)) { repairs.push(`Assistent ${i + 1} ist unvollständig und wurde entfernt.`); continue; }
-    generators.push({ id: g.id, type: g.type, name: typeof g.name === 'string' ? g.name : g.type, frame: g.frame as GeneratorInstance['frame'], params: (g.params && typeof g.params === 'object' ? g.params : {}) as GeneratorInstance['params'], hidden: !!g.hidden, ...(typeof g.groupId==='string'?{groupId:g.groupId}:{}) });
+    if(g.partOffsets!==undefined&&!validPartOffsets(g.partOffsets))return {doc:null,errors:['Ungültige Einzelteil-Anpassung.'],repairs};
+    generators.push({ ...(g.partOffsets!==undefined?{partOffsets:g.partOffsets as GeneratorInstance['partOffsets']}:{}), id: g.id, type: g.type, name: typeof g.name === 'string' ? g.name : g.type, frame: g.frame as GeneratorInstance['frame'], params: (g.params && typeof g.params === 'object' ? g.params : {}) as GeneratorInstance['params'], hidden: !!g.hidden, ...(typeof g.groupId==='string'?{groupId:g.groupId}:{}) });
   }
   const project = (d.project && typeof d.project === 'object' ? d.project : {}) as Partial<OwcDocument['project']>;
   const doc: OwcDocument = {
@@ -149,5 +153,6 @@ export function validateDocument(raw: unknown): ValidationResult {
     doc.joints.push({ id:j.id, type:j.type as Joint['type'], a:j.a as string, b:j.b as string, params, ...(typeof j.generator === 'string' && generators.some(g => g.id === j.generator) ? {generator:j.generator} : {}), ...(j.suppressed === true ? {suppressed:true} : {}) });
     seen.add(j.id);
   }
+  if(evaluate(doc).warnings.some(w=>['offset.invalid','offset.missing','offset.blocked'].includes(w.key)))return {doc:null,errors:['Einzelteil-Anpassung ist verwaist oder wegen Abhängigkeiten gesperrt.'],repairs};
   return { doc, errors, repairs: [...new Set(repairs)] };
 }

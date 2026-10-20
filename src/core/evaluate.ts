@@ -1,3 +1,4 @@
+import { partOffsetBlock,partOffsetKey,validPartOffsets } from './partOffsets';
 import { catalogFor, type Catalog } from './catalog';
 import { groupFrame, groupPath, transformMotion } from './assemblies';
 import { sketchProfile } from './sketch';
@@ -51,6 +52,7 @@ export function evaluate(doc: OwcDocument): Evaluated {
   for (const g of doc.generators) {
     const def = GENERATORS[g.type];
     if (!def) {
+      if(Object.keys(g.partOffsets??{}).length)warnings.push({key:'offset.invalid',args:{name:g.name}});
       warnings.push({ key: 'warn.unknownGenerator', args: { type: g.type } });
       continue;
     }
@@ -58,11 +60,24 @@ export function evaluate(doc: OwcDocument): Evaluated {
     try {
       outp = def.build(withDefaults(def, g.params), { catalog, id: g.id });
     } catch (err) {
+      if(Object.keys(g.partOffsets??{}).length)warnings.push({key:'offset.invalid',args:{name:g.name}});
       warnings.push({ key: 'warn.generatorFailed', args: { name: g.name, error: String((err as Error).message ?? err) } });
       continue;
     }
     const assemblyPath=groupPath(doc,g.groupId),frame=composeFrame(groupFrame(doc,g.groupId),g.frame);
-    for (const e of outp.elements) elements.push({ ...transformElement(e, frame), assemblyPath, hidden: e.hidden || g.hidden || assemblyPath.some(id=>doc.groups.find(g=>g.id===id)?.hidden), generator: g.id });
+    const offsets=g.partOffsets;
+    if(offsets&&!validPartOffsets(offsets))warnings.push({key:'offset.invalid',args:{name:g.name}});
+    const validOffsets=offsets&&validPartOffsets(offsets)?offsets:{};
+    for(const key of Object.keys(validOffsets))if(!outp.elements.some(e=>e.id===`${g.id}/${key}`))warnings.push({key:'offset.missing',args:{name:g.name,part:key}});
+    for (const original of outp.elements) {
+      let e=original;const key=partOffsetKey(g.id,e.id),offset=Object.hasOwn(validOffsets,key)?validOffsets[key]:undefined;
+      if(offset){
+        const block=partOffsetBlock(e,[...outp.joints,...doc.joints],!!outp.statics.length);
+        if(block)warnings.push({key:'offset.blocked',args:{name:e.name}});
+        else e={...e,frame:{...e.frame,o:e.frame.o.map((value,i)=>value+offset[i]) as Frame['o']}};
+      }
+      elements.push({ ...transformElement(e, frame), assemblyPath, hidden: e.hidden || g.hidden || assemblyPath.some(id=>doc.groups.find(g=>g.id===id)?.hidden), generator: g.id });
+    }
     // Explicit entries with the same stable ID override generator defaults.
     joints.push(...outp.joints.filter(j => !doc.joints.some(override => override.id === j.id)));
     hardware.push(...outp.hardware);

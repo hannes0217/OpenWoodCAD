@@ -1,3 +1,4 @@
+import { beginAlignment } from './faceAlignment';
 import { deleteSelection, duplicateSelection, saveFile } from './actions';
 import { t } from './i18n';
 import { getState, redo, setState, undo, type Tool, type Workspace } from './store';
@@ -22,6 +23,7 @@ export function cadCommands():CadCommand[] {
   tool('cutRect','tool.cutRect','cad.modify'),tool('cutCircle','tool.cutCircle','cad.modify'),tool('measure','menu.measure','cad.inspect','M'),
   {id:'insert',label:t('cad.newTemplate'),group:t('cad.create'),shortcut:'I',run:()=>setState({workspace:'model',dialog:{type:'insert'}})},
   ...(['translate','rotate'] as const).map((gizmoMode) => ({id:gizmoMode,label:t(gizmoMode==='translate'?'cad.move':'cad.rotate'),group:t('cad.modify'),run:()=>setState({workspace:'model',tool:'select',gizmoMode})})),
+  {id:'align.faces',label:t('align.title'),group:t('cad.modify'),disabled:!s.selection.length,run:beginAlignment},
   {id:'duplicate',label:t('menu.duplicate'),group:t('cad.modify'),disabled:!s.selection.length,run:()=>duplicateSelection()},
   {id:'delete',label:t('menu.delete'),group:t('cad.modify'),disabled:!s.selection.length,run:deleteSelection},
   {id:'undo',label:t('menu.undo'),group:t('cad.modify'),disabled:!s.past.length,run:undo},

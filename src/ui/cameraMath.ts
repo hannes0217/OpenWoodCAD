@@ -43,3 +43,11 @@ export function fitCamera(camera:CadCamera,box:THREE.Box3,direction:THREE.Vector
   camera.position.copy(center).addScaledVector(d,distance);camera.near=Math.max(.1,distance/10000);camera.far=Math.max(100000,distance*100);
   camera.lookAt(center);resizeCamera(camera,aspect);return center;
 }
+
+/** Zoom to bounds without leaving the current view or rolling a work plane. */
+export function fitCurrentView(camera:CadCamera,box:THREE.Box3,target:THREE.Vector3,aspect:number):THREE.Vector3 {
+  const direction=camera.position.clone().sub(target),up=camera.up.clone();
+  const center=fitCamera(camera,box,direction,aspect);
+  camera.up.copy(up);camera.lookAt(center);camera.updateMatrixWorld();
+  return center;
+}

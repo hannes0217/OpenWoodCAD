@@ -1,3 +1,5 @@
+import type { AlignmentDraft } from './faceAlignment';
+import { offsetDe,offsetEn } from './i18n-offset';
 import { useSyncExternalStore } from 'react';
 import { evaluate, type Evaluated } from '../core/evaluate';
 import { uid } from '../core/math';
@@ -14,6 +16,7 @@ export type Tool = 'select' | 'beam' | 'rect' | 'circle' | 'poly' | 'measure' | 
 export type Lang = 'de' | 'en';
 
 export interface AppState {
+  alignmentEdit:AlignmentDraft|null;
   dimensionEdit:DimensionEdit|null;
   directMove: {delta:[number,number,number];axis:'x'|'y'|'z'|null;blocked?:boolean}|null;
   selectionFilter:SelectionFilter;
@@ -46,7 +49,7 @@ export interface AppState {
   dirty: boolean;
   fileName: string | null;
   toast: { text: string; kind: 'info' | 'error' } | null;
-  dialog: null | { type: 'insert' } | { type:'sketch';id?:string } | { type: 'about' } | { type: 'joint'; a: string; b: string; id?: string } | { type: 'shortcuts' } | { type: 'projects' };
+  dialog: null | {type:'align'} | {type:'partPlacement';id:string} | { type: 'insert' } | { type:'sketch';id?:string } | { type: 'about' } | { type: 'joint'; a: string; b: string; id?: string } | { type: 'shortcuts' } | { type: 'projects' };
   /** Chosen entry: furniture, carpentry or free drawing. */
   mode: 'furniture' | 'carpentry' | 'free' | null;
   tourStep: number | null;
@@ -103,7 +106,7 @@ function loadPrefs(): Partial<AppState> {
 const browserLang: Lang = typeof navigator !== 'undefined' && !navigator.language?.startsWith('de') ? 'en' : 'de';
 
 let state: AppState = {
-  dimensionEdit:null,
+  alignmentEdit:null,dimensionEdit:null,
   directMove:null,
   jointPreview:null,selectionFilter:'all',visibilityOverrides:{},isolatedIds:null,contextMenu:null,contextPreview:null,
   cad: readCadSettings(null),
@@ -279,11 +282,15 @@ export async function createRestorePoint(label: string): Promise<void> {
 }
 
 /** Change the document through a mutating function on a deep copy (undoable). */
-export function updateDoc(fn: (d: OwcDocument) => void): void {
+export function updateDoc(fn: (d: OwcDocument) => void): boolean {
   const next = structuredClone(state.doc);
   fn(next);
+  if(next.generators.some(g=>Object.keys(g.partOffsets??{}).length)&&evaluate(next).warnings.some(w=>['offset.invalid','offset.missing','offset.blocked'].includes(w.key))){
+    toast((state.lang==='de'?offsetDe:offsetEn)['offset.changeBlocked'],'error');return false;
+  }
   setState({ doc: next, past: [...state.past.slice(-99), state.doc], future: [], dirty: true });
   scheduleSave();
+  return true;
 }
 
 /** Replace the document (load/new) – clears history. */

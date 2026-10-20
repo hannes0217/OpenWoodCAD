@@ -6,7 +6,7 @@ import type { Frame, Plane, Vec3 } from './math';
 // =====================================================================
 
 export const FORMAT = 'openwoodcad';
-export const FORMAT_VERSION = 5;
+export const FORMAT_VERSION = 6;
 
 export interface Localized {
   de: string;
@@ -169,6 +169,8 @@ export interface Joint {
 // ------------------------------------------------------------- generators
 
 export interface GeneratorInstance {
+  /** Local translations keyed by stable generator-local part ID (without instance prefix). */
+  partOffsets?: Record<string, Vec3>;
   id: string;
   type: string;
   name: string;

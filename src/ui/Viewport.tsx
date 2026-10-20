@@ -1,3 +1,5 @@
+import { captureAlignmentFace } from './faceAlignment';
+import { movementScope,movementSelection } from './movementScope';
 import { movableRoots } from '../core/assemblies';
 import { beginDimensionEdit, modelDimensions, type ModelDimension } from './modelDimensions';
 import { fmt, t } from './i18n';
@@ -16,7 +18,7 @@ import { orbitCamera } from './orbit';
 import type { SnapEdge, WorkPlane } from './precision';
 import { tools, type ViewApi } from './tools';
 import { getState, setState, subscribe, evaluated, type AppState } from './store';
-import { changeProjection, fitCamera, resizeCamera, VIEW_DIRECTIONS, type CadCamera, type ViewName } from './cameraMath';
+import { changeProjection, fitCamera, fitCurrentView, resizeCamera, VIEW_DIRECTIONS, type CadCamera, type ViewName } from './cameraMath';
 import { configureCadNavigation,installNavigationRecovery } from './navigation';
 import { pickPartIds, resolveSelection, visibleElements } from './selection';
 import { beginDirectMove, commitDirectMove, commitRigidMove, directMoveDelta, type MoveTransaction, type MoveAxis } from './directMove';
@@ -263,6 +265,8 @@ class SceneView implements ViewApi {
     if(jointPreview){const visibleIds=new Set(visible.map(e=>e.id));visible=ev.elements.filter(e=>jointPreview.ids.includes(e.id)||(jointPreview.showContext&&visibleIds.has(e.id)));}
     geom.request(visible);
     const sel = new Set(resolveSelection(ev,s.selection));
+    const scope=movementScope(s.doc,ev,s.selection,visible.map(e=>e.id),s.tool==='select'&&s.cad.directDrag&&s.cad.navigation!=='classic'&&!s.contextMenu&&!s.dialog&&!s.dimensionEdit&&!s.jointPreview?s.hover?.id:undefined);
+    const moving=new Set(s.tool==='select'?scope.ids:[]);
     const selGens = new Set(s.selection.filter((x) => x.startsWith('gen:')).map((x) => x.slice(4)));
     const temporary=new Set<THREE.Material>();
     this.root.traverse(o=>{
@@ -273,9 +277,11 @@ class SceneView implements ViewApi {
     this.root.clear();
     const edgeMatSec = this.edgeMat.clone();
     const edgeSelSec = this.edgeSelMat.clone();
+    const edgeMoveSec=this.edgeMat.clone();edgeMoveSec.color.set(0xffb020);
     if (s.section.enabled) {
       edgeMatSec.clippingPlanes = [this.clip];
       edgeSelSec.clippingPlanes = [this.clip];
+      edgeMoveSec.clippingPlanes = [this.clip];
     }
     for (const e of visible) {
       const g = this.geometryFor(e);
@@ -287,8 +293,9 @@ class SceneView implements ViewApi {
       }
       const selected = sel.has(e.id) || (e.generator !== undefined && selGens.has(e.generator)) || !!jointPreview?.ids.includes(e.id);
       const preview=s.contextPreview===e.id;
+      const companion=moving.has(e.id)&&!selected;
       const mesh = new THREE.Mesh(g.mesh, this.material(color, { xray: s.xray, section: s.section.enabled }));
-      const lines = new THREE.LineSegments(g.edges, selected || preview ? edgeSelSec : edgeMatSec);
+      const lines = new THREE.LineSegments(g.edges, selected || preview ? edgeSelSec : companion ? edgeMoveSec : edgeMatSec);
       const grp = new THREE.Group();
       grp.add(mesh, lines);
       grp.matrixAutoUpdate = false;
@@ -307,11 +314,11 @@ class SceneView implements ViewApi {
       grp.userData.generator = e.generator;
       mesh.userData.elementId = e.id;
       const flagged = s.issueIds.includes(e.id);
-      if (selected || flagged || preview) {
+      if (selected || flagged || preview || companion) {
         mesh.material = this.material(color, { xray: s.xray, section: s.section.enabled }).clone();
         mesh.userData.temporaryMaterial=true;
-        (mesh.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(preview?0xffb020:flagged && !selected ? 0xff2020 : 0x0a5cff);
-        (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = preview ? 0.45 : flagged && !selected ? 0.35 : 0.12;
+        (mesh.material as THREE.MeshStandardMaterial).emissive = new THREE.Color(preview||companion?0xffb020:flagged && !selected ? 0xff2020 : 0x0a5cff);
+        (mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = preview ? 0.45 : companion ? 0.25 : flagged && !selected ? 0.35 : 0.12;
         if(preview){mesh.material.depthTest=false;mesh.renderOrder=500;}
       }
       if (s.showLabels) {
@@ -378,8 +385,9 @@ class SceneView implements ViewApi {
     }
     const box = new THREE.Box3();
     for (const g of groups) box.expandByObject(g);
+    if(s.alignmentEdit){this.gizmo.detach();return;}
     this.dimensionOverlay(box,s,ev);
-    if(s.dimensionEdit||s.jointPreview){this.gizmo.detach();return;}
+    if(s.dimensionEdit||s.jointPreview||s.alignmentEdit){this.gizmo.detach();return;}
     const mode=s.gizmoMode==='none'&&s.cad.navigation==='solidworks'?'translate':s.gizmoMode;
     if(mode==='none') {this.gizmo.detach();return;}
     const c = box.getCenter(new THREE.Vector3());
@@ -477,15 +485,15 @@ class SceneView implements ViewApi {
     this.root.updateMatrixWorld(true);
     for (const g of this.root.children) if (set.has(g.userData.elementId)) box.expandByObject(g);
     if (box.isEmpty()) return;
-    const dir = this.camera.position.clone().sub(this.controls.target).normalize();
-    this.resetOrbitTarget(fitCamera(this.camera,box,dir,(this.host.clientWidth||1)/(this.host.clientHeight||1)));
+    this.resetOrbitTarget(fitCurrentView(this.camera,box,this.controls.target,(this.host.clientWidth||1)/(this.host.clientHeight||1)));
     this.controls.update();
     this.dirty = true;
   }
 
-  fit(view: ViewName = 'iso') {
+  fit(view?: ViewName) {
     const bounds=this.bounds(),box=bounds.isEmpty()?new THREE.Box3(new THREE.Vector3(-500,-500,0),new THREE.Vector3(500,500,500)):bounds;
-    this.resetOrbitTarget(fitCamera(this.camera,box,new THREE.Vector3(...VIEW_DIRECTIONS[view]),(this.host.clientWidth||1)/(this.host.clientHeight||1)));
+    const aspect=(this.host.clientWidth||1)/(this.host.clientHeight||1);
+    this.resetOrbitTarget(view?fitCamera(this.camera,box,new THREE.Vector3(...VIEW_DIRECTIONS[view]),aspect):fitCurrentView(this.camera,box,this.controls.target,aspect));
     this.controls.update();
     this.dirty = true;
   }
@@ -605,7 +613,7 @@ export function viewportOrbit(yaw: number, pitch: number) {
   active.controls.update(); active.render();
 }
 
-export function viewportFit(view: ViewName = 'iso') {
+export function viewportFit(view?: ViewName) {
   if(active){active.cancelInteraction?.();active.fit(view);}else requestAnimationFrame(()=>active?.fit(view));
 }
 
@@ -682,7 +690,7 @@ export default function Viewport() {
       if (s.tool !== prev.tool || s.workPlane !== prev.workPlane || s.workZ !== prev.workZ || s.projectId !== prev.projectId || s.drawingPlane!==prev.drawingPlane || s.planePick!==prev.planePick) { tools.reset(); }
       const motionOnly = s.doc === prev.doc && s.selection === prev.selection && (s.drawerOpen !== prev.drawerOpen || s.openGroups !== prev.openGroups);
       if (motionOnly) {cancelDirect();view.cancelGizmo();view.updateMotion(s);}
-      else if (s.doc !== prev.doc || s.selection !== prev.selection || s.colorBy !== prev.colorBy || s.xray !== prev.xray || s.section !== prev.section || s.showLabels !== prev.showLabels || s.gizmoMode !== prev.gizmoMode || s.tool !== prev.tool || s.snap !== prev.snap || s.issueIds !== prev.issueIds || s.visibilityOverrides!==prev.visibilityOverrides || s.isolatedIds!==prev.isolatedIds || s.contextPreview!==prev.contextPreview || s.jointPreview!==prev.jointPreview || s.dimensionEdit!==prev.dimensionEdit || s.lang!==prev.lang) refresh();
+      else if (s.doc !== prev.doc || s.selection !== prev.selection || s.colorBy !== prev.colorBy || s.xray !== prev.xray || s.section !== prev.section || s.showLabels !== prev.showLabels || s.gizmoMode !== prev.gizmoMode || s.tool !== prev.tool || s.snap !== prev.snap || s.issueIds !== prev.issueIds || s.visibilityOverrides!==prev.visibilityOverrides || s.isolatedIds!==prev.isolatedIds || s.contextPreview!==prev.contextPreview || s.hover?.id!==prev.hover?.id || s.jointPreview!==prev.jointPreview || s.dimensionEdit!==prev.dimensionEdit || s.alignmentEdit!==prev.alignmentEdit || s.lang!==prev.lang) refresh();
     });
     const unsubGeom = geom.subscribe(refresh);
     const ro = new ResizeObserver(() => {cancelDirect();view.cancelGizmo();view.resize();});
@@ -695,7 +703,7 @@ export default function Viewport() {
       const state=getState();
       if(e.button!==0||e.buttons!==1||e.ctrlKey||e.shiftKey||e.metaKey||state.tool!=='select'||!state.cad.directDrag||state.cad.navigation==='classic'||state.dialog||state.jointPreview||state.dimensionEdit||view.gizmo.axis)return;
       const hit=view.pickDetailed(e.clientX,e.clientY);if(!hit)return;
-      const ev=evaluated(),selected=resolveSelection(ev,state.selection).includes(hit.id)&&movableRoots(state.doc,ev,state.selection).length?state.selection:[hit.id];
+      const ev=evaluated(),selected=movementSelection(state.doc,ev,state.selection,hit.id);
       const normal=view.camera.getWorldDirection(new THREE.Vector3());
       const transaction=beginDirectMove(state.doc,ev,selected,state.projectId,hit.point,[normal.x,normal.y,normal.z],view.ray(e.clientX,e.clientY));
       if(!transaction)return;
@@ -706,6 +714,7 @@ export default function Viewport() {
     const onRightDown=(e:PointerEvent)=>{if(e.button===2)rightDown={x:e.clientX,y:e.clientY};};
     const onContext=(e:MouseEvent)=>{
       e.preventDefault();
+      if(getState().alignmentEdit)return;
       if(rightDown && Math.hypot(e.clientX-rightDown.x,e.clientY-rightDown.y)>4){rightDown=null;return;}
       rightDown=null;
       const ids=view.pickCandidates(e.clientX,e.clientY),state=getState();
@@ -718,6 +727,14 @@ export default function Viewport() {
         if(el.hasPointerCapture(e.pointerId))el.releasePointerCapture(e.pointerId);
         el.style.cursor='';view.controls.enabled=true;view.configureNavigation();setState({directMove:null});
         if(finished.active){down=null;lastClick={id:'',t:0};if(finished.delta)commitDirectMove(finished.transaction,finished.delta);refresh();return;}
+      }
+      if(getState().alignmentEdit){
+        const clicked=!!down&&Math.hypot(e.clientX-down.x,e.clientY-down.y)<=4&&e.button===0;down=null;
+        if(clicked){const hit=view.pickDetailed(e.clientX,e.clientY),edit=getState().alignmentEdit;
+          const part=hit&&evaluated().elements.find(part=>part.id===hit.id);
+          if(hit&&part&&geom.mesh(geomSig(part))&&!geom.failuresFor(part).length)captureAlignmentFace(hit);
+          else if(edit)setState({alignmentEdit:{...edit,error:'align.mesh'}});
+        }return;
       }
       if (view.gizmoBusy || getState().dialog) { down = null; return; }
       if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4 || e.button !== 0) {down=null;return;}
@@ -758,6 +775,7 @@ export default function Viewport() {
         }
         e.stopImmediatePropagation();return;
       }
+      if(getState().alignmentEdit){el.style.cursor='crosshair';return;}
       if(getState().contextMenu)return;
       if (getState().tool !== 'select') { if (!e.buttons) tools.move(e.clientX, e.clientY); return; }
       if (e.buttons) { if (getState().hover) setState({ hover: null }); return; }

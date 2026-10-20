@@ -1,18 +1,20 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { materialName, type Catalog } from '../../core/catalog';
 import { parseMeasure } from '../precision';
 import { getState } from '../store';
 
 /** Number input that commits on blur / Enter (one undo step per edit). */
-export function NumberInput({ value, onCommit, min, max, step = 1, unit, disabled, width }: { value: number; onCommit: (v: number) => void; min?: number; max?: number; step?: number; unit?: string; disabled?: boolean; width?: number }) {
+export function NumberInput({ value, onCommit, min, max, step = 1, unit, disabled, width }: { value: number; onCommit: (v: number) => void | boolean; min?: number; max?: number; step?: number; unit?: string; disabled?: boolean; width?: number }) {
   const [text, setText] = useState(String(value));
+  const cancelled = useRef(false);
   useEffect(() => setText(String(Math.round(value * 1000) / 1000)), [value]);
   const commit = () => {
+    if (cancelled.current) { cancelled.current = false; return; }
     let v: number;
     try { v = parseMeasure(text, unit === '°' ? 'angle' : 'length'); } catch { setText(String(value)); return; }
     if (!Number.isFinite(v)) return setText(String(value));
     const c = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v));
-    if (c !== value) onCommit(c);
+    if (c !== value && onCommit(c)===false) return setText(String(value));
     setText(String(c));
   };
   return (
@@ -22,16 +24,24 @@ export function NumberInput({ value, onCommit, min, max, step = 1, unit, disable
         inputMode="decimal"
         value={text}
         disabled={disabled}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => { cancelled.current = false; setText(e.target.value); }}
         onBlur={commit}
         onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            cancelled.current = true;
+            setText(String(value));
+            e.currentTarget.blur();
+            return;
+          }
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
           if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();
             const v = Number(text.replace(',', '.')) || 0;
             const n = Math.min(max ?? Infinity, Math.max(min ?? -Infinity, v + (e.key === 'ArrowUp' ? step : -step) * (e.shiftKey ? 10 : 1)));
             setText(String(n));
-            onCommit(n);
+            if(onCommit(n)===false)setText(String(value));
           }
         }}
       />
@@ -42,6 +52,7 @@ export function NumberInput({ value, onCommit, min, max, step = 1, unit, disable
 
 export function TextInput({ value, onCommit, placeholder }: { value: string; onCommit: (v: string) => void; placeholder?: string }) {
   const [text, setText] = useState(value);
+  const cancelled = useRef(false);
   useEffect(() => setText(value), [value]);
   return (
     <input
@@ -49,9 +60,14 @@ export function TextInput({ value, onCommit, placeholder }: { value: string; onC
       className="text-input"
       value={text}
       placeholder={placeholder}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={() => text !== value && onCommit(text)}
-      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+      onChange={(e) => { cancelled.current = false; setText(e.target.value); }}
+      onBlur={() => { if (cancelled.current) { cancelled.current = false; return; } if (text !== value) onCommit(text); }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault(); e.stopPropagation(); cancelled.current = true;
+          setText(value); e.currentTarget.blur();
+        } else if (e.key === 'Enter') e.currentTarget.blur();
+      }}
     />
   );
 }

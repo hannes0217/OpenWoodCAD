@@ -1,3 +1,4 @@
+import { partPlacementInfo } from '../partPlacement';
 import { findMaterial, materialName } from '../../core/catalog';
 import { GENERATORS } from '../../core/generators';
 import { frameFromEuler, frameToEuler, type Vec3 } from '../../core/math';
@@ -71,8 +72,10 @@ export function Properties() {
               <strong>{t('props.pos')} {elem.pos}: {elem.name}</strong>
               <div className="muted small">{fmt(elem.length, 1)} × {fmt(elem.width, 1)} × {fmt(elem.height, 1)} mm · {(() => { try { return materialName(findMaterial(ev.catalog, elem.materialId), lang); } catch { return elem.materialId; } })()}</div>
               <ProcessingList ids={[elem.id]} />
+              {(()=>{const info=partPlacementInfo(doc,ev,elem.id);return info&&<><button className="btn" disabled={!!info.blocked} onClick={()=>setState({dialog:{type:'partPlacement',id:elem.id},hover:null})}>{t('offset.open')}</button>{info.blocked&&<small>{t(info.blocked)}</small>}</>;})()}
             </div>
           )}
+          {!!Object.keys(gen.partOffsets??{}).length&&<div className="pad"><small>{t('offset.count',{n:Object.keys(gen.partOffsets??{}).length})}</small><button className="btn" onClick={()=>updateDoc(d=>{const g=d.generators.find(g=>g.id===gen.id);if(g)delete g.partOffsets;})}>{t('offset.resetAll')}</button></div>}
           <ParamForm defs={GENERATORS[gen.type]?.params ?? []} values={gen.params} catalog={ev.catalog} onChange={setGenParam} />
           <div className="pad"><MembershipEditor objectKey={`gen:${gen.id}`}/></div>
           <Section title={t('props.placement')} open={false}>

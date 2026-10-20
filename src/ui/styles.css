@@ -431,3 +431,18 @@ button:focus-visible,select:focus-visible,input:focus-visible,.tree-item:focus-v
 .plane-status { color:var(--accent); font-weight:600; flex-basis:100%; }
 .precision-controls > strong { font-size:12px; }
 .precision-controls button[aria-pressed=true] { outline:2px solid var(--accent); }
+
+.movement-scope { position:absolute; left:12px; top:12px; z-index:5; display:grid; gap:5px; width:min(285px,calc(100% - 205px)); padding:10px 12px; border:1px solid var(--line); border-left:3px solid #ffb020; border-radius:8px; background:var(--panel); box-shadow:0 3px 14px #0001; font-size:12px; max-height:60%; overflow:auto; }
+.movement-scope strong { overflow-wrap:anywhere; }
+.movement-scope-actions { display:flex; flex-wrap:wrap; gap:5px; margin-top:3px; }
+.movement-scope-actions button { border:1px solid var(--line); border-radius:4px; background:var(--panel); color:var(--text); padding:5px 7px; cursor:pointer; font-size:11px; }
+@media(max-width:650px) { .movement-scope { top:auto; bottom:65px; width:calc(100% - 24px); max-height:30%; } }
+
+.part-placement-editor { position:fixed; z-index:80; left:50%; top:85px; transform:translateX(-50%); width:min(480px,calc(100vw - 24px)); display:grid; gap:10px; padding:16px; border:1px solid var(--accent); border-radius:8px; background:var(--panel); box-shadow:0 5px 24px #0005; max-height:80vh; overflow:auto; }
+.placement-fields { display:flex; flex-wrap:wrap; gap:8px; }
+.placement-fields label { display:flex; align-items:center; gap:5px; }
+.placement-fields input { width:90px; }
+
+.alignment-editor { position:fixed; left:12px; bottom:45px; z-index:80; display:grid; gap:7px; width:min(330px,calc(100vw - 24px)); max-height:75vh; overflow:auto; padding:12px; border:1px solid var(--accent); border-radius:8px; background:var(--panel); box-shadow:0 5px 24px #0005; font-size:12px; }
+.alignment-editor input:not([type=checkbox]) { width:100px; }
+.alignment-editor select { max-width:100%; }

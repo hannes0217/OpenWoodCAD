@@ -1,3 +1,4 @@
+import { MovementScope } from './components/MovementScope';
 import { DimensionEditor } from './components/DimensionEditor';
 import { useEffect, useRef, useState } from 'react';
 import { deleteSelection, duplicateSelection, newDocument, openFile, saveFile, selectAll } from './actions';
@@ -110,7 +111,7 @@ export default function App() {
       else if (k === 'm') setState({ tool: 'measure', workspace: 'model' });
       else if (k === 'j') { const sel = getState().selection.filter((x) => !x.includes(':')); if (sel.length === 2) setState({ dialog: { type: 'joint', a: sel[0], b: sel[1] } }); }
       else if (k === 's' && !e.ctrlKey && !e.metaKey) {e.preventDefault();setCommandOpen(true);}
-      else if (k === 'f') viewportFit('iso');
+      else if (k === 'f') viewportFit();
       else if (k >= '1' && k <= '4') viewportFit((['iso', 'front', 'side', 'top'] as const)[Number(k) - 1]);
     };
     window.addEventListener('keydown', onKey);
@@ -180,7 +181,7 @@ export default function App() {
               <div className="viewport-wrap">
                 <Viewport />
                 <CadViewControls />
-                <DirectMoveHint/><DimensionEditor/>
+                <MovementScope/><DirectMoveHint/><DimensionEditor/>
                 {shown!==ev.elements.length && <button className="visibility-banner" onClick={showAllParts} title={t('context.showAll')}>{t('context.status',{shown,total:ev.elements.length})} · {t('context.showAll')}</button>}
                 <HoverTip />
                 {ev.elements.length === 0 && tool === 'select' && <StartScreen />}

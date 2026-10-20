@@ -1,3 +1,6 @@
+import { alignDe,alignEn } from './i18n-align';
+import { offsetDe,offsetEn } from './i18n-offset';
+import { scopeDe,scopeEn } from './i18n-scope';
 import { planesDe,planesEn } from './i18n-planes';
 import { dimensionsDe,dimensionsEn } from './i18n-dimensions';
 import { drawingDe, drawingEn } from './i18n-drawing';
@@ -138,7 +141,7 @@ Object.assign(de,precisionDe);Object.assign(en,precisionEn);
 Object.assign(de,contextDe);Object.assign(en,contextEn);
 
 const dicts: Record<Lang, Dict> = { de, en };
-Object.assign(de,dragDe,dimensionsDe,planesDe);Object.assign(en,dragEn,dimensionsEn,planesEn);
+Object.assign(de,dragDe,dimensionsDe,planesDe,scopeDe,offsetDe,alignDe);Object.assign(en,dragEn,dimensionsEn,planesEn,scopeEn,offsetEn,alignEn);
 Object.assign(de,assemblyDe);Object.assign(en,assemblyEn);
 Object.assign(de,sketchDe);Object.assign(en,sketchEn);
 
